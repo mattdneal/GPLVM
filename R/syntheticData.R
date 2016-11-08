@@ -19,6 +19,7 @@ generate.structured.dataset <- function(num.samples=NULL,
                                         num.structures,
                                         function.noise=0,
                                         nonlinear=FALSE,
+                                        nonlinear.lengthscale.quantile=0.25,
                                         Z=NULL) {
   if (is.null(Z)) {
     Z <- matrix(rnorm(num.samples * num.latent.variables), ncol=num.latent.variables)
@@ -28,7 +29,7 @@ generate.structured.dataset <- function(num.samples=NULL,
   }
 
   if (nonlinear) {
-    l <- quantile(as.matrix(dist(Z)), .25)
+    l <- quantile(as.matrix(dist(Z)), nonlinear.lengthscale.quantile)
     K <- gplvm.SE(Z=Z, l, 1)
   } else {
     K <- Z %*% t(Z)
@@ -41,8 +42,8 @@ generate.structured.dataset <- function(num.samples=NULL,
   structure.heights <- K %*% A
 
   structures <- list()
-  structures$x <- sample(seq(ncol), num.structures)
-  structures$y <- sample(seq(nrow), num.structures)
+  structures$x <- sample(seq(ncol), num.structures, replace = TRUE)
+  structures$y <- sample(seq(nrow), num.structures, replace = TRUE)
 
   structures$cov.matrices <- list()
   structures$templates <- list()
@@ -73,6 +74,7 @@ generate.structured.dataset <- function(num.samples=NULL,
                                             * diag(dists %*% chol2inv(R) %*% t(dists))
                                     )
     )
+    structures$templates[[i]] <- structures$templates[[i]] / max(as.numeric(structures$templates[[i]]))
   }
 
   data <- matrix(0, nrow=num.samples, ncol=nrow * ncol)
@@ -92,4 +94,41 @@ generate.structured.dataset <- function(num.samples=NULL,
   out$K <- K
   out$Z <- Z
   return(out)
+}
+
+
+#' Sample from a structured GPLVM model
+#'
+#' @param Z
+#' @param nrow.X
+#' @param K_S
+#' @param K_Z
+#'
+#' @return
+#' @export
+#'
+#' @examples
+#' Z <- rnorm(50, 2)
+#' Z <- c(Z, rnorm(50, -2))
+#' Z <- cbind(Z, rnorm(100))
+#' K_Z <- GPLVM:::gplvm.SE(Z, 1, 1, 0)
+#' K_S <- GPLVM:::structured.kernel.Matrix(50, 50, c(10,10), 1)
+#' K_S <- K_S - Diagonal(nrow(K_S))
+#' X <- sample.from.model(Z, 50, K_S, K_Z)
+sample.from.model <- function(Z, nrow.X, K_S, K_Z) {
+  K_S.chol <- chol(K_S, pivot=FALSE)
+  K_Z.chol <- chol(K_Z, pivot=FALSE)
+  X <- matrix(rnorm(nrow(K_S.chol) * nrow(K_Z.chol)), ncol=ncol(K_S.chol))
+  X <- t(K_Z.chol) %*% X %*% K_S.chol
+  layout(matrix(1:8, 2))
+  for (i in sample(nrow(Z), 8)) image(matrix(X[i,], nrow.X), zlim=range(X))
+  return(X)
+}
+
+call.sample.from.model <- function() {
+
+  Z <- rnorm(50, 2)
+  Z <- c(Z, rnorm(50, -2))
+  Z <- cbind(Z, rnorm(100))
+  plot(Z)
 }

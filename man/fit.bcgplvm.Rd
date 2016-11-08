@@ -4,9 +4,9 @@
 \alias{fit.bcgplvm}
 \title{Fit a back-constrained GPLVM model}
 \usage{
-fit.bcgplvm(X, q, iterations = 1000, plot.freq = 100, classes = NULL,
+fit.bcgplvm(X, q, iterations = 1000, plot.freq = 100, classes = 1,
   Z.init = NULL, A.init = NULL, num.init.params = 100, K.bc.l = 0.1,
-  Z.normal.prior = FALSE)
+  Z.normal.prior = TRUE)
 }
 \arguments{
 \item{Z.normal.prior}{}

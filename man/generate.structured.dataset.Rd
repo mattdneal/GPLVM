@@ -6,7 +6,7 @@
 \usage{
 generate.structured.dataset(num.samples = NULL, nrow, ncol,
   num.latent.variables = NULL, num.structures, function.noise = 0,
-  nonlinear = FALSE, Z = NULL)
+  nonlinear = FALSE, nonlinear.lengthscale.quantile = 0.25, Z = NULL)
 }
 \arguments{
 \item{Z}{}

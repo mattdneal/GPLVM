@@ -4,7 +4,7 @@ bc.Z <- function(K.bc, A) {
   return(Z)
 }
 
-bc.L <- function(A, X, l, alpha, sigma, K.bc, Z.normal.prior=FALSE) {
+bc.L <- function(A, X, l, alpha, sigma, K.bc, Z.normal.prior) {
   Z <- bc.Z(K.bc, A)
   gplvm.L(Z, X, l, alpha, sigma, Z.normal.prior=Z.normal.prior)
 }
@@ -16,7 +16,7 @@ dZ.dAij <- function(Z, K.bc, i, j) {
   return(out)
 }
 
-dL.dA <- function(X, Z, l, alpha, sigma, K.bc, K, dL.dK, Z.normal.prior=FALSE) {
+dL.dA <- function(X, Z, l, alpha, sigma, K.bc, K, dL.dK, Z.normal.prior) {
   dL.dZ <- dL.dZ(X, Z, l, alpha, sigma, K, dL.dK, Z.normal.prior=Z.normal.prior)
   out <- matrix(0, nrow=nrow(Z), ncol=ncol(Z))
   for (i in 1:nrow(Z)) {
@@ -27,7 +27,7 @@ dL.dA <- function(X, Z, l, alpha, sigma, K.bc, K, dL.dK, Z.normal.prior=FALSE) {
   return(out)
 }
 
-dL.dA.check <- function(X, A, l, alpha, sigma, K.bc, Z.normal.prior=FALSE) {
+dL.dA.check <- function(X, A, l, alpha, sigma, K.bc, Z.normal.prior) {
   Z <- bc.Z(K.bc, A)
   K <- gplvm.SE(Z, l, alpha, sigma)
   dL.dK <- dL.dK(X, K)
@@ -52,7 +52,7 @@ dL.dA.check <- function(X, A, l, alpha, sigma, K.bc, Z.normal.prior=FALSE) {
 }
 
 
-bcgplvm.f <- function(par, X, K.bc, Z.normal.prior=FALSE) {
+bcgplvm.f <- function(par, X, K.bc, Z.normal.prior) {
   l <- par[1]
   alpha <- par[2]
   sigma <- par[3]
@@ -60,7 +60,7 @@ bcgplvm.f <- function(par, X, K.bc, Z.normal.prior=FALSE) {
   bc.L(A, X, l, alpha, sigma, K.bc, Z.normal.prior=Z.normal.prior)
 }
 
-bcgplvm.gr <- function(par, X, K.bc, Z.normal.prior=FALSE) {
+bcgplvm.gr <- function(par, X, K.bc, Z.normal.prior) {
   l <- par[1]
   alpha <- par[2]
   sigma <- par[3]
@@ -115,20 +115,27 @@ optimx.S.grad <- function(A, target, K.bc) {
 #'
 #' @importFrom optimx optimx
 fit.A <- function(target, K.bc) {
-  par <- rnorm(length(target))
-  optimx.out <- optimx(par,
-                       optimx.S,
-                       optimx.S.grad,
-                       target=target,
-                       K.bc=K.bc,
-                       method="BFGS",
-                       control=list(trace=T,
-                                    maximize=F,
-                                    kkt=FALSE,
-                                    maxit=1000,
-                                    starttests=TRUE)
+  A <- tryCatch({
+      K.bc.chol <- chol(K.bc)
+      return(backsolve(K.bc.chol, forwardsolve(t(K.bc.chol), target)))
+    },
+    error=function(e) {
+      par <- rnorm(length(target))
+      optimx.out <- optimx(par,
+                           optimx.S,
+                           optimx.S.grad,
+                           target=target,
+                           K.bc=K.bc,
+                           method="L-BFGS-B",
+                           control=list(trace=T,
+                                        maximize=F,
+                                        kkt=FALSE,
+                                        maxit=1000,
+                                        starttests=TRUE)
+      )
+      return(matrix(as.numeric(optimx.out)[1:length(target)], nrow=nrow(target), ncol=ncol(target)))
+    }
   )
-  A <- matrix(as.numeric(optimx.out)[1:length(target)], nrow=nrow(target), ncol=ncol(target))
   return(A)
 }
 
@@ -154,12 +161,12 @@ fit.bcgplvm <- function(X,
                         q,
                         iterations=1000,
                         plot.freq=100,
-                        classes=NULL,
+                        classes=1,
                         Z.init=NULL,
                         A.init=NULL,
                         num.init.params=100,
                         K.bc.l=0.1,
-                        Z.normal.prior=FALSE) {
+                        Z.normal.prior=TRUE) {
 
   K.bc <- gplvm.SE(Z=X, l=K.bc.l, alpha=1, sigma=0)
 
@@ -177,6 +184,8 @@ fit.bcgplvm <- function(X,
   } else if (identical(Z.init, "PCA")) {
     X.pca <- prcomp(X)
     target <- X.pca$x[,1:q]
+    target.sd <- sd(as.numeric(target))
+    target <- target / target.sd
     A.init <- fit.A(target = target, K.bc = K.bc)
   } else {
     if (ncol(as.matrix(Z.init)) != q) stop("Mismatch between Z.init and q")
@@ -225,7 +234,8 @@ fit.bcgplvm <- function(X,
                    gplvm.hp.gr,
                    Z=Z,
                    X=X,
-                   method="BFGS",
+                   Z.normal.prior=Z.normal.prior,
+                   method="L-BFGS-B",
                    control=list(trace=T,
                                 maximize=T,
                                 kkt=FALSE,
@@ -250,7 +260,7 @@ fit.bcgplvm <- function(X,
                   X=X,
                   K.bc=K.bc,
                   Z.normal.prior=Z.normal.prior,
-                  method="BFGS",
+                  method="L-BFGS-B",
                   control=list(trace=T,
                                maximize=T,
                                kkt=FALSE,
@@ -307,7 +317,7 @@ fit.bcgplvm.sequential <- function(X,
                                    classes=NULL,
                                    num.init.params=100,
                                    K.bc.l=0.1,
-                                   Z.normal.prior=FALSE) {
+                                   Z.normal.prior=TRUE) {
   current.q <- 1
   while (current.q < q) {
     current.q <- current.q + 1
@@ -330,4 +340,38 @@ fit.bcgplvm.sequential <- function(X,
   }
 
   return(temp.fit)
+}
+
+#' Select a lengthscale for constrained optimization by min and max
+#'
+#' @param X
+#' @param target.max.min
+#' @param target.min.max
+#'
+#' @return
+#' @export
+select.bc.l.minmax <- function(X, target.max.min, target.min.max) {
+  cost.fun <- function(l, X.dist, target.max.min, target.min.max) {
+    K.bc <- gplvm.SE.dist(X.dist, l, 1)
+    max.min <- max(apply(K.bc, 1, min))
+    min.max <- min(apply(K.bc - diag(1, nrow(K.bc)), 1, max))
+    max(max.min - target.max.min, 0)^2 + max(target.min.max - min.max, 0)^2
+  }
+  X.dist <- as.matrix(dist(X))
+  optimize(cost.fun, c(0, max(X.dist)*10),
+           X.dist=X.dist, target.max.min=target.max.min, target.min.max=target.min.max)$minimum
+}
+
+#' Select a lengthscale for constrained optimization by median
+#'
+#' @param X
+#' @param target.median.cor
+#'
+#' @return
+#' @export
+select.bc.l.median <- function(X, target.median.cor) {
+  X.dist <- as.matrix(dist(X))
+  X.dist.median <- median(X.dist[X.dist!=0])
+  l <- X.dist.median / sqrt(-2*log(target.median.cor))
+  return(l)
 }

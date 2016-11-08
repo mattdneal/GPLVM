@@ -7,7 +7,7 @@ dL.dK <- function(X, K) {
   (temp %*% t(temp) - D * K.inv) / 2
 }
 
-dL.dZ <- function(X, Z, l, alpha, sigma, K, dL.dK, Z.normal.prior=FALSE) {
+dL.dZ <- function(X, Z, l, alpha, sigma, K, dL.dK, Z.normal.prior) {
   out <- Z
   for (i in 1:nrow(Z)) {
     for (j in 1:ncol(Z)) {
@@ -15,7 +15,7 @@ dL.dZ <- function(X, Z, l, alpha, sigma, K, dL.dK, Z.normal.prior=FALSE) {
     }
   }
   if (Z.normal.prior) {
-    out <- out - Z
+    out <- out - Z / 10^2
   }
   return(out)
 }
@@ -38,21 +38,27 @@ dL.dsigma <- function(X, Z, l, alpha, sigma, K, dL.dK) {
   return(out)
 }
 
-gplvm.L <- function(Z, X, l, alpha, sigma, Z.normal.prior=FALSE) {
+
+gplvm.L.from.K <- function(Z, X, K, Z.normal.prior=TRUE) {
+  X <- as.matrix(X)
   D <- ncol(X)
   N <- nrow(X)
-  K <- gplvm.SE(Z, l, alpha, sigma)
   K.chol <- chol(K)
   K.inv.X <- backsolve(K.chol, forwardsolve(t(K.chol), X))
   K.log.det <- 2 * sum(log(diag(K.chol)))
   Z.prior.term <- 0
   if (Z.normal.prior) {
-    Z.prior.term <- - length(Z)/2 * log(2 * pi) - 1/2 * sum(as.numeric(Z)^2)
+    Z.prior.term <- - length(Z)/2 * log(2 * 10^2 * pi) - 1 / (2 * 10 ^2) * sum(as.numeric(Z)^2)
   }
-  -D * N * log(2 * pi) / 2 - D * K.log.det / 2 - 1/2 * sum(K.inv.X * X) + Z.prior.term
+  return(-D * N * log(2 * pi) / 2 - D * K.log.det / 2 - 1/2 * sum(K.inv.X * X) + Z.prior.term)
 }
 
-gplvm.f <- function(par, X, Z.normal.prior=FALSE) {
+gplvm.L <- function(Z, X, l, alpha, sigma, Z.normal.prior=TRUE) {
+  K <- gplvm.SE(Z, l, alpha, sigma)
+  return(gplvm.L.from.K(Z, X, K, Z.normal.prior))
+}
+
+gplvm.f <- function(par, X, Z.normal.prior) {
   l <- par[1]
   alpha <- par[2]
   sigma <- par[3]
@@ -60,7 +66,7 @@ gplvm.f <- function(par, X, Z.normal.prior=FALSE) {
   gplvm.L(Z, X, l, alpha, sigma, Z.normal.prior)
 }
 
-gplvm.gr <- function(par, X, Z.normal.prior=FALSE) {
+gplvm.gr <- function(par, X, Z.normal.prior) {
   l <- par[1]
   alpha <- par[2]
   sigma <- par[3]
@@ -74,14 +80,14 @@ gplvm.gr <- function(par, X, Z.normal.prior=FALSE) {
   )
 }
 
-gplvm.hp.f <- function(par, Z, X, Z.normal.prior=FALSE) {
+gplvm.hp.f <- function(par, Z, X, Z.normal.prior) {
   l <- par[1]
   alpha <- par[2]
   sigma <- par[3]
   gplvm.L(Z, X, l, alpha, sigma, Z.normal.prior=Z.normal.prior)
 }
 
-gplvm.hp.gr <- function(par, Z, X, Z.normal.prior=FALSE) {
+gplvm.hp.gr <- function(par, Z, X, Z.normal.prior) {
   l <- par[1]
   alpha <- par[2]
   sigma <- par[3]
@@ -116,7 +122,7 @@ fit.gplvm <- function(X,
                       classes=NULL,
                       Z.init=NULL,
                       num.init.params=100,
-                      Z.normal.prior=FALSE) {
+                      Z.normal.prior) {
   if (is.null(Z.init)) {
     Z <- matrix(rnorm(nrow(X)*q, sd=0.2), ncol=q)
   } else if (identical(Z.init, "PCA")) {
@@ -158,7 +164,7 @@ fit.gplvm <- function(X,
                    gplvm.hp.gr,
                    Z=Z,
                    X=X,
-                   method="BFGS",
+                   method="L-BFGS-B",
                    control=list(trace=T,
                                 maximize=T,
                                 kkt=FALSE,
@@ -182,7 +188,7 @@ fit.gplvm <- function(X,
                   gplvm.gr,
                   X=X,
                   Z.normal.prior=Z.normal.prior,
-                  method="BFGS",
+                  method="L-BFGS-B",
                   control=list(trace=T,
                                maximize=T,
                                kkt=FALSE,

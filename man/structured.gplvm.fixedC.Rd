@@ -6,10 +6,10 @@
 \usage{
 structured.gplvm.fixedC(X, nrows.X, se.par = c(3, 1, 1),
   structured.par = c(20, 1, 1), Z = NULL, q = 2,
-  probabilistic.trace.estimate = TRUE, maxit = 100)
+  probabilistic.trace.estimate = TRUE, maxit = 100, Z.normal.prior = TRUE)
 }
 \arguments{
-\item{maxit}{}
+\item{Z.normal.prior}{}
 }
 \description{
 Fit a structured GPLVM model with fixed structure covariance
@@ -23,7 +23,8 @@ X <- generate.structured.dataset(100,20,20,num.latent.variables=NULL,5,0.1,nonli
 X$data <- scale(X$data, center=T, scale=F)
 X.sd <- sd(as.numeric(X$data))
 X$data <- X$data / X.sd
-Z.init <- prcomp(X$data)$x[,1:5]
-sgplvm.model <- structured.gplvm.fixedC(X=X$data, nrows.X=20, probabilistic.trace.estimate=F, structured.par=c(2, 2, 1), Z=Z.init)
+X.noisy <- X$data + rnorm(length(X$data))
+Z.init <- prcomp(X.noisy)$x[,1:5]
+sgplvm.model <- structured.gplvm.fixedC(X=X$data, nrows.X=20, probabilistic.trace.estimate=F, structured.par=c(2, 2, 1), Z=Z.init, maxit=1000, q=5)
 }
 

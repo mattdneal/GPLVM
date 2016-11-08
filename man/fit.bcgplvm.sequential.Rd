@@ -6,7 +6,7 @@
 \usage{
 fit.bcgplvm.sequential(X, q, iterations = 1000, plot.freq = 100,
   classes = NULL, num.init.params = 100, K.bc.l = 0.1,
-  Z.normal.prior = FALSE)
+  Z.normal.prior = TRUE)
 }
 \arguments{
 \item{Z.normal.prior}{}

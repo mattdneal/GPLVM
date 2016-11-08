@@ -13,8 +13,7 @@ gplvm.SE <- function(Z, l, alpha, sigma=0) {
 }
 
 dK.dZij <- function(Z, K, i, j, l) {
-  out <- K
-  out[] <- 0
+  out <- matrix(0, nrow=nrow(K), ncol=ncol(K))
   out[i, ] <- out[, i] <- (Z[, j] - Z[i, j]) / l^2 * K[i, ]
   return(out)
 }
