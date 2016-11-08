@@ -3,3 +3,6 @@
 .RData
 .Ruserdata
 *.png
+/demo.R
+/latentZ2D.RData
+/regression_results.RData
