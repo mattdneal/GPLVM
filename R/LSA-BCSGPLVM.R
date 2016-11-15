@@ -1,3 +1,36 @@
+ZPriorUnif_ <- "uniform"
+ZPriorNorm_ <- "normal"
+ZPriorDisc_ <- "discriminative"
+ZPriorOptions_ <- c(ZPriorNorm_, ZPriorUnif_, ZPriorDisc_)
+
+class_var_matrices <- function(Z, classes) {
+  # There is a typo in the Discriminative GPLVM paper (Urtasun 2007) (S_w and
+  # S_b are switched) so the definitions of S_w and S_b used here are from
+  # Sugiyama 2006
+  out <- list()
+  if (!is.factor(classes)) stop("classes parameter must be a factor")
+  if (!is.numeric(Z)) {
+    stop("Z must be numeric")
+  } else {
+    Z <- as.matrix(Z)
+  }
+  M_0 <- colMeans(Z)
+  nclasses <- nlevels(classes)
+  M <- matrix(0, nrow=nclasses, ncol=ncol(Z))
+  S_w <- S_b <- matrix(0, ncol(Z), ncol(Z))
+  for (i in 1:nclasses) {
+    index <- which(classes==levels(classes)[i])
+    M[i, ] <- colMeans(Z[index, ])
+    temp.sum <- M[i, ] - M_0
+    S_b <- S_b + length(index) * outer(temp.sum, temp.sum)
+    Z.centered.class <- scale(Z[index, ], center=M[i, ], scale=F)
+    S_w <- S_w + t(Z.centered.class) %*% Z.centered.class
+  }
+  out$S_b <- S_b
+  out$S_w <- S_w
+  return(out)
+}
+
 arr_ind_conv_multipliers <- function(limits) {
   dim <- length(limits)
   multipliers <- numeric(dim) + 1
@@ -55,7 +88,8 @@ LSA_BCSGPLVM.Z.from.W <- function(W, l) {
   return(Z)
 }
 
-LSA_BCSGPLVM.L <- function(W, X, l, alpha, sigma, K=NULL, Z.normal.prior=TRUE) {
+LSA_BCSGPLVM.L <- function(W, X, l, alpha, sigma, Z.prior=c("normal", "uniform", "discriminative"), K=NULL) {
+  Z.prior <- match.arg(Z.prior, ZPriorOptions_)
   if (missing(K)) {
     K <- LSA_BCSGPLVM.kernel(W=W, l=l, alpha=alpha, sigma=sigma)
   }
@@ -68,7 +102,7 @@ LSA_BCSGPLVM.L <- function(W, X, l, alpha, sigma, K=NULL, Z.normal.prior=TRUE) {
 
   Z.prior.term <- 0
   Z <- LSA_BCSGPLVM.Z.from.W(W, l)
-  if (Z.normal.prior) {
+  if (Z.prior == ZPriorNorm_) {
     Z.prior.term <- - length(Z)/2 * log(2 * 10^2 * pi) - 1 / (2 * 10 ^2) * sum(as.numeric(Z)^2)
   }
 
@@ -90,7 +124,7 @@ LSA_BCSGPLVM.dK.dL_S_i <- function(W, l, K, i) {
   return(out)
 }
 
-LSA_BCSGPLVM.dL.dpar <- function(W, X, l, alpha, sigma, K=NULL, dL.dK=NULL, Z.normal.prior=TRUE) {
+LSA_BCSGPLVM.dL.dpar <- function(W, X, l, alpha, sigma, K=NULL, dL.dK=NULL) {
   X <- as.matrix(X)
   if (missing(K)) {
     K <- LSA_BCSGPLVM.kernel(W=W, l=l, alpha=alpha, sigma=sigma)
@@ -131,7 +165,11 @@ LSA_BCSGPLVM.dK.dZij <- function(Z, K, i, j, l_Z, W.pre) {
   return(out)
 }
 
-LSA_BCSGPLVM.dL.dZ <- function(W, W.pre, X, Z, l, alpha, sigma, K=NULL, dL.dK=NULL, Z.normal.prior) {
+LSA_BCSGPLVM.dL.dZ <- function(W, W.pre, X, Z,
+                               l, alpha, sigma,
+                               Z.prior=c("normal", "uniform", "discriminative"),
+                               K=NULL, dL.dK=NULL) {
+  Z.prior <- match.arg(Z.prior, ZPriorOptions_)
   X <- as.matrix(X)
   if (missing(K)) {
     K <- LSA_BCSGPLVM.kernel(W=W, l=l, alpha=alpha, sigma=sigma)
@@ -148,12 +186,17 @@ LSA_BCSGPLVM.dL.dZ <- function(W, W.pre, X, Z, l, alpha, sigma, K=NULL, dL.dK=NU
         sum(dL.dK[index, index] * dK.dZij[index, index]))
     }
   }
-  if (Z.normal.prior) {
+  if (Z.prior==ZPriorNorm_) {
     out <- out - Z / 10^2
   }
 }
 
-LSA_BCSGPLVM.dL.dA <- function(W, W.pre, X, Z, l, alpha, sigma, K.bc, K=NULL, dL.dK=NULL, Z.normal.prior=TRUE) {
+LSA_BCSGPLVM.dL.dA <- function(W, W.pre, X, Z,
+                               l, alpha, sigma,
+                               K.bc,
+                               Z.prior=c("normal", "uniform", "discriminative"),
+                               K=NULL, dL.dK=NULL) {
+  Z.prior <- match.arg(Z.prior, ZPriorOptions_)
   X <- as.matrix(X)
   if (missing(K)) {
     K <- LSA_BCSGPLVM.kernel(W=W, l=l, alpha=alpha, sigma=sigma)
@@ -161,7 +204,9 @@ LSA_BCSGPLVM.dL.dA <- function(W, W.pre, X, Z, l, alpha, sigma, K.bc, K=NULL, dL
   if (missing(dL.dK)) {
     dL.dK <- dL.dK(X, K)
   }
-  dL.dZ <- LSA_BCSGPLVM.dL.dZ(W, W.pre, X, Z, l, alpha, sigma, K, dL.dK, Z.normal.prior)
+  dL.dZ <- LSA_BCSGPLVM.dL.dZ(W=W, W.pre=W.pre, X=X, Z=Z,
+                              l=l, alpha=alpha, sigma=sigma,
+                              Z.prior=Z.prior, K=K, dL.dK=dL.dK)
   out <- matrix(0, nrow=nrow(Z), ncol=ncol(Z))
   for (i in 1:nrow(Z)) {
     for (j in 1:ncol(Z)) {
@@ -262,7 +307,11 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
                                 optimize.A, classes, plot.freq, learning.rate,
                                 momentum.rate=momentum.rate, adam.epsilon=adam.epsilon,
                                 par.step.size.range=NULL, par.fixed=NULL,
-                                verbose=FALSE) {
+                                verbose=FALSE, Z.prior=c("normal", "uniform", "discriminative")) {
+
+  ## TODO: implement Stochastic Meta-Descent
+
+
   if (!is.null(par.fixed)) {
     if (length(par.fixed) != length(par.init) | class(par.fixed) != "logical") {
       stop("par.fixed specified incorrectly")
@@ -270,6 +319,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
   } else {
     par.fixed <- rep(FALSE, length(par.init))
   }
+  Z.prior <- match.arg(Z.prior, ZPriorOptions_)
   iteration <- 0
   A <- A.init
   par <- par.init
@@ -322,7 +372,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
     K <- LSA_BCSGPLVM.kernel(W, par[-(1:2)], par[1], par[2])
     if (verbose) print(paste("Squared sum of K off-diag:", sum((K^2)) - sum(diag(K)^2)))
     dL.dK <- dL.dK(X.sample, K)
-    L <- LSA_BCSGPLVM.L(W, X.sample, par[-(1:2)], par[1], par[2], K=K, Z.normal.prior=TRUE)
+    L <- LSA_BCSGPLVM.L(W=W, X=X.sample, l=par[-(1:2)], alpha=par[1], sigma=par[2], Z.prior=Z.prior, K=K)
 
     if (optimize.A) {
       A.hist[iteration, , ] <- A
@@ -334,7 +384,9 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
     }
 
     if (optimize.A) {
-      dL.dA <- LSA_BCSGPLVM.dL.dA(W, W.pre, X.sample, Z, par[-(1:2)], par[1], par[2], K.bc, K=K, dL.dK=dL.dK, Z.normal.prior=TRUE)
+      dL.dA <- LSA_BCSGPLVM.dL.dA(W=W, W.pre=W.pre, X=X.sample, Z=Z,
+                                  l=par[-(1:2)], alpha=par[1], sigma=par[2],
+                                  K.bc=K.bc, Z.prior=Z.prior, K=K, dL.dK=dL.dK)
       m.A <- momentum.rate * m.A + (1 - momentum.rate) * dL.dA
       v.A <- learning.rate * v.A + (1 - learning.rate) * dL.dA^2
 
@@ -343,7 +395,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
       delta.A <- step.size / (sqrt(v.A.hat) + adam.epsilon) * m.A.hat
     }
 
-    dL.dpar <- LSA_BCSGPLVM.dL.dpar(W, X.sample, par[-(1:2)], par[1], par[2], K=K, dL.dK=dL.dK, Z.normal.prior=TRUE)
+    dL.dpar <- LSA_BCSGPLVM.dL.dpar(W, X.sample, par[-(1:2)], par[1], par[2], K=K, dL.dK=dL.dK)
 
     # Update the Adam variables
     m.par <- momentum.rate * m.par + (1 - momentum.rate) * dL.dpar
@@ -365,7 +417,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
     step.size <- step.size - step.size.change
   }
 
-  L <- LSA_BCSGPLVM.L(W, X.sample, par[-(1:2)], par[1], par[2], Z.normal.prior=TRUE)
+  L <- LSA_BCSGPLVM.L(W=W, X=X.sample, l=par[-(1:2)], alpha=par[1], sigma=par[2], Z.prior=Z.prior)
 
   par.hist[iteration + 1,] <- c(par, L)
 
@@ -417,13 +469,19 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
 #' @param A.init
 #' @param K.bc.l
 #' @param K.bc.target.median
-#' @param Z.normal.prior
 #' @param par.init Vector of parameters: alpha, sigma, l_Z, followed by the lengthscales for the structural dimensions
 #' @param points.in.approximation
 #' @param initial.step.size
 #' @param final.step.size
-#' @param momentum.decay
 #' @param learning.rate
+#' @param Z.prior
+#' @param initial.step.size.par
+#' @param final.step.size.par
+#' @param momentum.rate
+#' @param adam.epsilon
+#' @param parameter.opt.iterations
+#' @param par.fixed.A.opt
+#' @param verbose
 #'
 #' @return
 #' @export
@@ -439,28 +497,42 @@ fit.lsa_bcsgplvm <- function(X,
                              A.init=NULL,
                              K.bc.l="auto",
                              K.bc.target.median=0.3,
-                             Z.normal.prior=TRUE,
+                             Z.prior=c("normal", "uniform", "discriminative"),
                              par.init=NULL,
                              points.in.approximation=1024,
                              initial.step.size.par=10^-1,
                              final.step.size.par=10^-3,
                              initial.step.size=10^-3,
                              final.step.size=10^-3,
-                             momentum.rate=0.9,
+                             momentum.rate=0.5,
                              learning.rate=0.9,
                              adam.epsilon=10^-8,
                              parameter.opt.iterations=300,
                              par.fixed.A.opt=NULL,
-                             verbose=FALSE
+                             verbose=FALSE,
+                             subsample.flat.X=NULL
 ) {
+  Z.prior <- match.arg(Z.prior, ZPriorOptions_)
   out <- list()
+  out$Z.prior <- Z.prior
   step.size.range <- c(initial.step.size, final.step.size)
   par.step.size.range <- c(initial.step.size.par, final.step.size.par)
   if (!(is.null(Z.init) | is.null(A.init))) {
     stop("Can't specify both Z.init and A.init")
   }
 
-  X.unstructured <- t(apply(X, 1, as.numeric))
+  if (is.null(subsample.flat.X)) {
+    X.unstructured <- t(apply(X, 1, as.numeric))
+  } else {
+    if (!is.numeric(subsample.flat.X)) stop("subsample.flat.X should be NULL (for no subsampling), or an integer.")
+    ncols <- prod(dim(X)[-1])
+    sampled.cols <- sample(ncols, subsample.flat.X)
+    ind <- t(sapply(sampled.cols, vec_to_arr_index, limits=dim(X)[-1]))
+    X.unstructured <- matrix(0, nrow=dim(X)[1], ncol=subsample.flat.X)
+    for (i in 1:dim(X)[1]) {
+      X.unstructured[i,] <- X[cbind(i, ind)]
+    }
+  }
 
   if (is.null(K.bc.l)) {
     #Turn off constraint
@@ -550,7 +622,7 @@ fit.lsa_bcsgplvm <- function(X,
                              learning.rate=learning.rate, momentum.rate=momentum.rate,
                              adam.epsilon=adam.epsilon,
                              par.step.size.range=par.step.size.range,
-                             verbose=verbose)
+                             verbose=verbose, Z.prior=Z.prior)
 
   par <- opt$par
 
@@ -566,7 +638,7 @@ fit.lsa_bcsgplvm <- function(X,
                              adam.epsilon=adam.epsilon,
                              par.step.size.range=par.step.size.range,
                              par.fixed=par.fixed.A.opt,
-                             verbose=verbose)
+                             verbose=verbose, Z.prior=Z.prior)
 
 
   out$A.opt <- opt

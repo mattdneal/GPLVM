@@ -4,10 +4,14 @@
 \alias{replay.plots}
 \title{Replay the plots from fitting an LSA_BCSGPLVM model}
 \usage{
-replay.plots(fit.lsa_bcsgplvm.output, time = 30)
+replay.plots(fit.lsa_bcsgplvm.output, time = 30, pps = 5)
 }
 \arguments{
-\item{time}{}
+\item{fit.lsa_bcsgplvm.output}{optimization to replay}
+
+\item{time}{runtime}
+
+\item{pps}{plots per second}
 }
 \description{
 Replay the plots from fitting an LSA_BCSGPLVM model
