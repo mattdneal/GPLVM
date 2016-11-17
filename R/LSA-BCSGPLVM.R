@@ -295,15 +295,19 @@ array_to_flat_matrix <- function(data.array) {
   return(out)
 }
 
-LSA_BCSGPLVM.plot_iteration <- function(Z, par.hist, plot.A, iteration, classes) {
+LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, classes, K.bc) {
   close.screen(all.screens=TRUE)
   num.pars <- ncol(par.hist)
-  if (plot.A) {
+  if (plot.Z) {
     split.screen(c(1, 2))
     par.screens <- split.screen(c(num.pars + 1, 1), 1)
+    Z <- bc.Z(K.bc, A.hist[iteration, ,])
+    if (iteration > 1) {
+      prev.Z <- bc.Z(K.bc, A.hist[iteration - 1, ,])
+    }
     q <- ncol(Z)
     if (q > 2) {
-      plots <-q * (q - 1) / 2
+      plots <- q * (q - 1) / 2
       ncols <- floor(sqrt(plots))
       nrows <- ceiling(plots / ncols)
       plot.screens <- split.screen(c(nrows, ncols), 2)
@@ -338,10 +342,11 @@ LSA_BCSGPLVM.plot_iteration <- function(Z, par.hist, plot.A, iteration, classes)
   }
   screen(par.screens[length(par.screens)])
   par(mar=c(0,0,0,0))
-  legend("center", legend=c("alpha", "sigma", "l_Z", paste("l_S", 1:(ncol(par.hist) - 4), sep=""), "L"),
-         col=rainbow(ncol(par.hist)), lty=1, ncol=4, bty="n")
+  legend("center", legend=c(paste("It.", iteration), "alpha", "sigma", "l_Z", paste("l_S", 1:(ncol(par.hist) - 4), sep=""), "L"),
+         col=c(0, rainbow(ncol(par.hist))), lty=1, ncol=4, bty="n")
 
-  if (plot.A) {
+
+  if (plot.Z) {
     if (q > 2) {
       screen.num <- 0
       for (i in 1:(q-1)) {
@@ -350,6 +355,7 @@ LSA_BCSGPLVM.plot_iteration <- function(Z, par.hist, plot.A, iteration, classes)
           screen(plot.screens[screen.num])
           par(mar=c(0,0,0,0) + 0.1)
           plot(Z[, c(i,j)], col=classes, axes=FALSE, ann=FALSE)
+          arrows(prev.Z[, i], prev.Z[, j], Z[, i], Z[, j], length=0.05, col=classes)
           box()
         }
       }
@@ -357,9 +363,11 @@ LSA_BCSGPLVM.plot_iteration <- function(Z, par.hist, plot.A, iteration, classes)
     } else if (q == 2) {
       screen(2)
       plot(Z, col=classes)
+      arrows(prev.Z, prev.Z, Z, Z, length=0.05, col=classes)
     } else {
       screen(2)
       plot(as.numeric(Z), rep(0, length(Z)), col=classes)
+      arrows(as.numeric(prev.Z), rep(0, length(Z)), as.numeric(Z), rep(0, length(Z)), length=0.05, col=classes)
     }
   }
   close.screen(all.screens=TRUE)
@@ -444,7 +452,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
     par.hist[iteration, ] <- c(par, L)
 
     if (iteration > 1 & plot.freq != 0 & iteration %% plot.freq == 0) {
-      LSA_BCSGPLVM.plot_iteration(Z, par.hist, optimize.A, iteration, classes)
+      LSA_BCSGPLVM.plot_iteration(A.hist, par.hist, optimize.A, iteration, classes, K.bc)
     }
 
     if (optimize.A) {
@@ -714,6 +722,8 @@ fit.lsa_bcsgplvm <- function(X,
 
   out$A.opt <- opt
 
+  out$final.Z <- opt$Z
+
   return(out)
 }
 
@@ -741,8 +751,7 @@ replay.plots <- function(fit.lsa_bcsgplvm.output, time=30, pps=5) {
   it.start.time <- proc.time()[3]
   for (iteration in 2:nrow(par.hist)) {
     if (iteration%%plot.freq==0) {
-      Z <- bc.Z(K.bc, A.hist[iteration, , ])
-      LSA_BCSGPLVM.plot_iteration(Z, par.hist, TRUE, iteration, classes)
+      LSA_BCSGPLVM.plot_iteration(A.hist, par.hist, TRUE, iteration, classes, K.bc)
       it.run.time <- proc.time()[3] - it.start.time
       it.start.time <- proc.time()[3]
       time.mean <- (time.mean * num.it + it.run.time) / (num.it + 1)
