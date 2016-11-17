@@ -44,6 +44,14 @@ vec_to_arr_index <- function(index, limits) {
   return(out)
 }
 
+sample.cols.from.array <- function(dataArray, ind) {
+  X.unstructured <- matrix(0, nrow=dim(dataArray)[1], ncol=nrow(ind))
+  for (i in 1:dim(dataArray)[1]) {
+    X.unstructured[i,] <- dataArray[cbind(i, ind)]
+  }
+  return(X.unstructured)
+}
+
 LSA_BCSGPLVM.kernel <- function(W, l, alpha, sigma) {
   structure.dim <- length(l) - 1
   z.dim <- ncol(W) - structure.dim
@@ -557,6 +565,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
 #' @param verbose
 #' @param subsample.flat.X
 #' @param Z.prior.params
+#' @param save.X
 #'
 #' @return
 #' @export
@@ -586,18 +595,25 @@ fit.lsa_bcsgplvm <- function(X,
                              par.fixed.A.opt=NULL,
                              verbose=FALSE,
                              subsample.flat.X=NULL,
-                             Z.prior.params=list()
+                             Z.prior.params=list(),
+                             save.X=FALSE
 ) {
   Z.prior <- match.arg(Z.prior, ZPriorOptions_)
   out <- list()
   out$Z.prior <- Z.prior
   out$Z.prior.params <- Z.prior.params
+
+  if (save.X) {
+    out$X <- X
+  }
+
   step.size.range <- c(initial.step.size, final.step.size)
   par.step.size.range <- c(initial.step.size.par, final.step.size.par)
   if (!(is.null(Z.init) | is.null(A.init))) {
     stop("Can't specify both Z.init and A.init")
   }
 
+  out$dim.X <- dim(X)
   if (is.null(subsample.flat.X)) {
     X.unstructured <- t(apply(X, 1, as.numeric))
   } else {
@@ -605,10 +621,8 @@ fit.lsa_bcsgplvm <- function(X,
     ncols <- prod(dim(X)[-1])
     sampled.cols <- sample(ncols, subsample.flat.X)
     ind <- t(sapply(sampled.cols, vec_to_arr_index, limits=dim(X)[-1]))
-    X.unstructured <- matrix(0, nrow=dim(X)[1], ncol=subsample.flat.X)
-    for (i in 1:dim(X)[1]) {
-      X.unstructured[i,] <- X[cbind(i, ind)]
-    }
+    out$K.bc.X.ind <- ind
+    X.unstructured <- sample.cols.from.array(X, ind)
   }
 
   if (is.null(K.bc.l)) {
@@ -618,6 +632,7 @@ fit.lsa_bcsgplvm <- function(X,
     if (K.bc.l == "auto") {
       K.bc.l <- select.bc.l.median(X.unstructured, target.median.cor = K.bc.target.median)
     }
+    out$K.bc.l <- K.bc.l
     K.bc <- gplvm.SE(Z=X.unstructured, l=K.bc.l, alpha=1, sigma=0)
   }
 
@@ -722,7 +737,10 @@ fit.lsa_bcsgplvm <- function(X,
 
   out$A.opt <- opt
 
+  out$final.A <- opt$A
   out$final.Z <- opt$Z
+
+  class(out) <- "LSA_BCSGPLVM"
 
   return(out)
 }
@@ -764,4 +782,47 @@ replay.plots <- function(fit.lsa_bcsgplvm.output, time=30, pps=5) {
     }
   }
   layout(1)
+}
+
+predict.LSA_BCSGPLVM <- function(object, data, training.data=NULL) {
+  if (is.null(object$K.bc.l)) {
+    stop("Provided LSA_BCSGPLVM is unconstrained. Prediction for unconstrained models is not yet implemented.")
+  }
+  if (!identical(dim(data)[-1], object$dim.X[-1])) {
+    stop(paste("data has the wrong dimensions. Expecting,", paste(object$dim.X, collapse=", ")))
+  }
+  if (is.null(training.data) & is.null(object$X)) {
+    stop("The training data must either be saved in the LSA_BCSGPLVM object or provided using training.data")
+  } else {
+    if (!is.null(training.data) & !is.null(object$X)) {
+      warning("Training data provided but also saved in LSA_BCSGPLVM object. Using data from the object.")
+    }
+    if (is.null(object$X)) {
+      if (!identical(dim(training.data), object$dim.X)) {
+        stop("Provided training data dimensions do not match expected dimensions for training data")
+      }
+      object$X <- training.data
+    }
+  }
+  if (is.null(object$K.bc.X.ind)) {
+    object$X <- t(apply(object$X, 1, as.numeric))
+    data <- t(apply(data, 1, as.numeric))
+  } else {
+    object$X <- sample.cols.from.array(object$X, object$K.bc.X.ind)
+    data <- sample.cols.from.array(data, object$K.bc.X.ind)
+  }
+
+  out <- list()
+  out$K.star <- matrix(0, nrow=nrow(data), ncol=nrow(object$X))
+
+  for (i in 1:nrow(data)) {
+    for (j in 1:nrow(object$X)) {
+      out$K.star[i, j] <- sqrt(sum((data[i,] - object$X[j, ])^2))
+    }
+  }
+  out$K.star <- gplvm.SE.dist(out$K.star, object$K.bc.l, 1, 0)
+
+  out$predictions <- out$K.star %*% object$final.A
+
+  return(out)
 }

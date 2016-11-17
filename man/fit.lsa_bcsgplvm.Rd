@@ -12,14 +12,14 @@ fit.lsa_bcsgplvm(X, q = 2, iterations = 1000, plot.freq = 100,
   initial.step.size = 10^-3, final.step.size = 10^-3, momentum.rate = 0.5,
   learning.rate = 0.9, adam.epsilon = 10^-8,
   parameter.opt.iterations = 300, par.fixed.A.opt = NULL, verbose = FALSE,
-  subsample.flat.X = NULL, Z.prior.params = list())
+  subsample.flat.X = NULL, Z.prior.params = list(), save.X = FALSE)
 }
 \arguments{
 \item{Z.init}{Either a matrix of initial latent values, or "PCA" for PCA start values, or ISOMAP for ISOMAP start values.}
 
 \item{par.init}{Vector of parameters: alpha, sigma, l_Z, followed by the lengthscales for the structural dimensions}
 
-\item{Z.prior.params}{}
+\item{save.X}{}
 }
 \description{
 Fit a large scale approximation back constrained structured GPLVM model
