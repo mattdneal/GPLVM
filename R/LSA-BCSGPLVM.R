@@ -1,8 +1,16 @@
+# Priors on Z
 ZPriorUnif_ <- "uniform"
 ZPriorNorm_ <- "normal"
 ZPriorDisc_ <- "discriminative"
 ZPriorOptions_ <- c(ZPriorNorm_, ZPriorUnif_, ZPriorDisc_)
 
+# Optimization methods
+ADAM_ <- "ADAM"
+SMD_ <- "SMD"
+
+approx.hessian.vector.product <- function(g, x, v, r=10^-8) {
+  return((g(x + r*v) - g(x - r*v)) / (2 * r))
+}
 
 arr_ind_conv_multipliers <- function(limits) {
   dim <- length(limits)
@@ -371,7 +379,7 @@ LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, cla
     } else if (q == 2) {
       screen(2)
       plot(Z, col=classes)
-      arrows(prev.Z, prev.Z, Z, Z, length=0.05, col=classes)
+      arrows(prev.Z[, 1], prev.Z[, 2], Z[, 1], Z[, 2], length=0.05, col=classes)
     } else {
       screen(2)
       plot(as.numeric(Z), rep(0, length(Z)), col=classes)
@@ -382,15 +390,14 @@ LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, cla
 }
 
 LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximation,
-                                iterations, step.size.range,
-                                optimize.A, classes, plot.freq, learning.rate,
-                                momentum.rate=momentum.rate, adam.epsilon=adam.epsilon,
-                                par.step.size.range=NULL, par.fixed=NULL,
+                                iterations,
+                                optimize.A, classes, plot.freq, par.fixed=NULL,
                                 verbose=FALSE, Z.prior=c("normal", "uniform", "discriminative"),
-                                Z.prior.params=list()) {
+                                Z.prior.params=list(),
+                                optimization.method=c("SMD", "ADAM"),
+                                optimization.method.pars) {
 
-  ## TODO: implement Stochastic Meta-Descent
-
+  optimization.method <- match.arg(optimization.method)
 
   if (!is.null(par.fixed)) {
     if (length(par.fixed) != length(par.init) | class(par.fixed) != "logical") {
@@ -408,27 +415,59 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
   delta.A <- matrix(0, nrow=nrow(A), ncol=ncol(A))
   delta.par <- numeric(length(par))
 
-  # Variables for ADAM update
-  m.par <- numeric(length(par))
-  m.A <- matrix(0, nrow=nrow(A), ncol=ncol(A))
-  v.par <- numeric(length(par))
-  v.A <- matrix(0, nrow=nrow(A), ncol=ncol(A))
+  if (optimization.method == ADAM_) {
+    learning.rate <- optimization.method.pars$learning.rate
+    momentum.rate <- optimization.method.pars$momentum.rate
+    adam.epsilon <- optimization.method.pars$adam.epsilon
+    step.size.range <- optimization.method.pars$step.size.range
+    par.step.size.range <- optimization.method.pars$par.step.size.range
+
+    step.size <- step.size.range[1]
+    step.size.change <- (step.size.range[1] - step.size.range[2]) / iterations
+
+    if (is.null(par.step.size.range)) {
+      par.step.size <- step.size
+      par.step.size.change <- step.size.change
+    } else {
+      par.step.size <- par.step.size.range[1]
+      par.step.size.change <- (par.step.size.range[1] - par.step.size.range[2]) / iterations
+    }
+
+    # Variables for ADAM update
+    m.par <- numeric(length(par))
+    m.A <- matrix(0, nrow=nrow(A), ncol=ncol(A))
+    v.par <- numeric(length(par))
+    v.A <- matrix(0, nrow=nrow(A), ncol=ncol(A))
+  }
+
+  if (optimization.method == SMD_) {
+    if (length(optimization.method.pars$par.initial.step.size) == length(par)) {
+      smd.par.a_i <- optimization.method.pars$par.initial.step.size
+    } else {
+      smd.par.a_i <- rep(optimization.method.pars$par.initial.step.size, length.out=length(par))
+    }
+    smd.par.v_i <- rep(0, length(par))
+    if (optimize.A) {
+      if (length(optimization.method.pars$par.initial.step.size) == 1) {
+        smd.A.a_i <- matrix(optimization.method.pars$A.initial.step.size, ncol=ncol(A), nrow=nrow(A))
+      } else {
+        stop("optimization.method.pars$A.initial.step.size should be a scalar value.")
+      }
+      smd.A.v_i <- matrix(0, ncol=ncol(A), nrow=nrow(A))
+    }
+
+    smd.mu <- optimization.method.pars$meta.step.size.mu
+    smd.lambda <- optimization.method.pars$learning.rate.lambda
+    if (smd.lambda < 0 | smd.lambda > 1) stop("optimization.method.pars$learning.rate.lambda must be between 0 and 1 (inclusive).")
+
+
+  }
 
   par.hist <- matrix(0, ncol=length(par)+1, nrow=iterations + 1)
   if (optimize.A) {
     A.hist <- array(0, dim=c(iterations+1, dim(A)))
   }
 
-  step.size <- step.size.range[1]
-  step.size.change <- (step.size.range[1] - step.size.range[2]) / iterations
-
-  if (is.null(par.step.size.range)) {
-    par.step.size <- step.size
-    par.step.size.change <- step.size.change
-  } else {
-    par.step.size <- par.step.size.range[1]
-    par.step.size.change <- (par.step.size.range[1] - par.step.size.range[2]) / iterations
-  }
 
   while (iteration < iterations) {
     iteration <- iteration + 1
@@ -468,25 +507,58 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
                                   l=par[-(1:2)], alpha=par[1], sigma=par[2],
                                   K.bc=K.bc, Z.prior=Z.prior, K=K, dL.dK=dL.dK,
                                   Z.prior.params=Z.prior.params)
-      m.A <- momentum.rate * m.A + (1 - momentum.rate) * dL.dA
-      v.A <- learning.rate * v.A + (1 - learning.rate) * dL.dA^2
 
-      m.A.hat <- m.A / (1 - momentum.rate^iteration)
-      v.A.hat <- v.A / (1 - learning.rate^iteration)
-      delta.A <- step.size / (sqrt(v.A.hat) + adam.epsilon) * m.A.hat
+      if (optimization.method == ADAM_) {
+        m.A <- momentum.rate * m.A + (1 - momentum.rate) * dL.dA
+        v.A <- learning.rate * v.A + (1 - learning.rate) * dL.dA^2
+
+        m.A.hat <- m.A / (1 - momentum.rate^iteration)
+        v.A.hat <- v.A / (1 - learning.rate^iteration)
+        delta.A <- step.size / (sqrt(v.A.hat) + adam.epsilon) * m.A.hat
+      }
+      if (optimization.method == SMD_) {
+        if (iteration != 1) {
+          smd.A.a_i <- smd.A.a_i * pmax(matrix(0.5, ncol=ncol(A), nrow=nrow(A)),
+                                           1 - smd.mu * smd.A.v_i * dL.dA)
+        }
+        delta.A <- smd.A.a_i * dL.dA
+        g <- function(x) {
+          Z <- bc.Z(K.bc, x)
+          LSA_BCSGPLVM.dL.dA(W=W, W.pre=W.pre, X=X.sample, Z=Z,
+                             l=par[-(1:2)], alpha=par[1], sigma=par[2],
+                             K.bc=K.bc, Z.prior=Z.prior,
+                             Z.prior.params=Z.prior.params)
+        }
+        smd.A.H_i.v_i <- approx.hessian.vector.product(g, A, smd.A.v_i, r=10^-8)
+        smd.A.v_i <- smd.lambda * smd.A.v_i + smd.A.a_i * (smd.A.H_i.v_i - dL.dA)
+      }
     }
 
     dL.dpar <- LSA_BCSGPLVM.dL.dpar(W, X.sample, par[-(1:2)], par[1], par[2], K=K, dL.dK=dL.dK)
 
-    # Update the Adam variables
-    m.par <- momentum.rate * m.par + (1 - momentum.rate) * dL.dpar
-    v.par <- learning.rate * v.par + (1 - learning.rate) * dL.dpar^2
+    if (optimization.method == ADAM_) {
+      # Update the Adam variables
+      m.par <- momentum.rate * m.par + (1 - momentum.rate) * dL.dpar
+      v.par <- learning.rate * v.par + (1 - learning.rate) * dL.dpar^2
 
-    m.par.hat <- m.par / (1 - momentum.rate^iteration)
-    v.par.hat <- v.par / (1 - learning.rate^iteration)
+      m.par.hat <- m.par / (1 - momentum.rate^iteration)
+      v.par.hat <- v.par / (1 - learning.rate^iteration)
 
-    # Calculate the change (including momentum)
-    delta.par <- par.step.size / (sqrt(v.par.hat) + adam.epsilon) * m.par.hat
+      # Calculate the change (including momentum)
+      delta.par <- par.step.size / (sqrt(v.par.hat) + adam.epsilon) * m.par.hat
+    }
+
+    if (optimization.method == SMD_) {
+      if (iteration != 1) {
+        smd.par.a_i <- smd.par.a_i * pmax(0.5, 1 - smd.mu * smd.par.v_i * dL.dpar)
+      }
+      delta.par <- smd.par.a_i * dL.dpar
+      g <- function(x) {
+        LSA_BCSGPLVM.dL.dpar(W, X.sample, x[-(1:2)], x[1], x[2])
+      }
+      smd.par.H_i.v_i <- approx.hessian.vector.product(g, par, smd.par.v_i, r=10^-8)
+      smd.par.v_i <- smd.lambda * smd.par.v_i + smd.par.a_i * (smd.lambda * smd.par.H_i.v_i - dL.dpar)
+    }
 
     # Update par and step size
     par[!par.fixed] <- par[!par.fixed] + delta.par[!par.fixed]
@@ -494,8 +566,10 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
       A <- A + delta.A
     }
     if (verbose) print(par)
-    par.step.size <- par.step.size - par.step.size.change
-    step.size <- step.size - step.size.change
+    if (optimization.method == ADAM_) {
+      par.step.size <- par.step.size - par.step.size.change
+      step.size <- step.size - step.size.change
+    }
   }
 
   L <- LSA_BCSGPLVM.L(W=W, X=X.sample, l=par[-(1:2)], alpha=par[1], sigma=par[2], Z.prior=Z.prior, Z.prior.params=Z.prior.params)
@@ -552,20 +626,15 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
 #' @param K.bc.target.median
 #' @param par.init Vector of parameters: alpha, sigma, l_Z, followed by the lengthscales for the structural dimensions
 #' @param points.in.approximation
-#' @param initial.step.size
-#' @param final.step.size
-#' @param learning.rate
 #' @param Z.prior
-#' @param initial.step.size.par
-#' @param final.step.size.par
-#' @param momentum.rate
-#' @param adam.epsilon
 #' @param parameter.opt.iterations
 #' @param par.fixed.A.opt
 #' @param verbose
 #' @param subsample.flat.X
 #' @param Z.prior.params
 #' @param save.X
+#' @param optimization.method
+#' @param optimization.method.pars
 #'
 #' @return
 #' @export
@@ -584,13 +653,8 @@ fit.lsa_bcsgplvm <- function(X,
                              Z.prior=c("normal", "uniform", "discriminative"),
                              par.init=NULL,
                              points.in.approximation=1024,
-                             initial.step.size.par=10^-1,
-                             final.step.size.par=10^-3,
-                             initial.step.size=10^-3,
-                             final.step.size=10^-3,
-                             momentum.rate=0.5,
-                             learning.rate=0.9,
-                             adam.epsilon=10^-8,
+                             optimization.method=c("SMD", "ADAM"),
+                             optimization.method.pars=NULL,
                              parameter.opt.iterations=300,
                              par.fixed.A.opt=NULL,
                              verbose=FALSE,
@@ -598,6 +662,27 @@ fit.lsa_bcsgplvm <- function(X,
                              Z.prior.params=list(),
                              save.X=FALSE
 ) {
+  optimization.method <- match.arg(optimization.method)
+
+  if (is.null(optimization.method.pars)) {
+    # Set up default optimization parameters
+    optimization.method.pars <- list()
+    if (optimization.method == ADAM_) {
+      optimization.method.pars$learning.rate <- 0.9
+      optimization.method.pars$momentum.rate <- 0.9
+      optimization.method.pars$adam.epsilon <- 10^-8
+      optimization.method.pars$step.size.range <- c(10^-3, 10^-3)
+      optimization.method.pars$par.step.size.range <- c(10^-2, 10^-2)
+    }
+
+    if (optimization.method == SMD_) {
+      optimization.method.pars$par.initial.step.size <- 10^-2
+      optimization.method.pars$A.initial.step.size <- 10^-3
+      optimization.method.pars$meta.step.size.mu <- 10^-5
+      optimization.method.pars$learning.rate.lambda <- 0.9
+    }
+  }
+
   Z.prior <- match.arg(Z.prior, ZPriorOptions_)
   out <- list()
   out$Z.prior <- Z.prior
@@ -607,8 +692,6 @@ fit.lsa_bcsgplvm <- function(X,
     out$X <- X
   }
 
-  step.size.range <- c(initial.step.size, final.step.size)
-  par.step.size.range <- c(initial.step.size.par, final.step.size.par)
   if (!(is.null(Z.init) | is.null(A.init))) {
     stop("Can't specify both Z.init and A.init")
   }
@@ -709,11 +792,9 @@ fit.lsa_bcsgplvm <- function(X,
   opt <- LSA_BCSGPLVM.sgdopt(X=X, A.init=A.init, par.init=par, K.bc=K.bc,
                              points.in.approximation=points.in.approximation,
                              iterations=parameter.opt.iterations,
-                             step.size.range=step.size.range,
                              optimize.A=FALSE, classes=classes, plot.freq=plot.freq,
-                             learning.rate=learning.rate, momentum.rate=momentum.rate,
-                             adam.epsilon=adam.epsilon,
-                             par.step.size.range=par.step.size.range,
+                             optimization.method=optimization.method,
+                             optimization.method.pars=optimization.method.pars,
                              verbose=verbose, Z.prior=Z.prior,
                              Z.prior.params=Z.prior.params)
 
@@ -725,12 +806,10 @@ fit.lsa_bcsgplvm <- function(X,
   opt <- LSA_BCSGPLVM.sgdopt(X=X, A.init=A.init, par.init=par, K.bc=K.bc,
                              points.in.approximation=points.in.approximation,
                              iterations=iterations,
-                             step.size.range=step.size.range,
                              optimize.A=TRUE, classes=classes, plot.freq=plot.freq,
-                             learning.rate=learning.rate, momentum.rate=momentum.rate,
-                             adam.epsilon=adam.epsilon,
-                             par.step.size.range=par.step.size.range,
                              par.fixed=par.fixed.A.opt,
+                             optimization.method=optimization.method,
+                             optimization.method.pars=optimization.method.pars,
                              verbose=verbose, Z.prior=Z.prior,
                              Z.prior.params=Z.prior.params)
 
