@@ -784,6 +784,16 @@ replay.plots <- function(fit.lsa_bcsgplvm.output, time=30, pps=5) {
   layout(1)
 }
 
+#' Predict data for an LSA_BCSGPLVM model
+#'
+#' @param object
+#' @param data
+#' @param training.data
+#'
+#' @return
+#' @export
+#'
+#' @examples
 predict.LSA_BCSGPLVM <- function(object, data, training.data=NULL) {
   if (is.null(object$K.bc.l)) {
     stop("Provided LSA_BCSGPLVM is unconstrained. Prediction for unconstrained models is not yet implemented.")
