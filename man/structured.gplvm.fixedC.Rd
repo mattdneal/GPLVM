@@ -27,4 +27,3 @@ X.noisy <- X$data + rnorm(length(X$data))
 Z.init <- prcomp(X.noisy)$x[,1:5]
 sgplvm.model <- structured.gplvm.fixedC(X=X$data, nrows.X=20, probabilistic.trace.estimate=F, structured.par=c(2, 2, 1), Z=Z.init, maxit=1000, q=5)
 }
-

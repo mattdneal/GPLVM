@@ -12,4 +12,3 @@ select.bc.l.minmax(X, target.max.min, target.min.max)
 \description{
 Select a lengthscale for constrained optimization by min and max
 }
-

@@ -120,7 +120,7 @@ fit.gplvm <- function(X,
                       iterations=1000,
                       plot.freq=100,
                       classes=NULL,
-                      Z.init=NULL,
+                      Z.init="PCA",
                       num.init.params=100,
                       Z.normal.prior) {
   if (is.null(Z.init)) {
@@ -147,11 +147,11 @@ fit.gplvm <- function(X,
 
 
   par.init <- c(1, 1, 1)
-  par.init.L <- gplvm.hp.f(par.init, Z=Z, X=X)
+  par.init.L <- gplvm.hp.f(par.init, Z=Z, X=X, Z.normal.prior=Z.normal.prior)
   #first optimize the hyperparams for the initial Z
   for (i in seq(num.init.params)) {
     test.par.init <- rgamma(3, 1)
-    test.par.init.L <- gplvm.hp.f(test.par.init, Z=Z, X=X)
+    test.par.init.L <- gplvm.hp.f(test.par.init, Z=Z, X=X, Z.normal.prior=Z.normal.prior)
     if (test.par.init.L > par.init.L) {
       par.init <- test.par.init
       par.init.L <- test.par.init.L
@@ -164,6 +164,7 @@ fit.gplvm <- function(X,
                    gplvm.hp.gr,
                    Z=Z,
                    X=X,
+                   Z.normal.prior=Z.normal.prior,
                    method="L-BFGS-B",
                    control=list(trace=T,
                                 maximize=T,
@@ -221,4 +222,68 @@ fit.gplvm <- function(X,
 
   return(list(Z=Z, l=l, alpha=alpha, sigma=sigma, convcode=convcode))
 
+}
+
+
+#' Sparse GPLVM
+#'
+#' @param X
+#' @param q
+#' @param iterations
+#' @param Z.init
+#' @param classes
+#' @param Z.normal.prior
+#'
+#' @return
+#' @export
+sparse.gplvm <- function(X,
+                         q,
+                         active.set.size,
+                         iterations=10,
+                         Z.init="PCA",
+                         classes=1,
+                         Z.normal.prior=T
+) {
+  if (is.null(Z.init)) {
+    Z <- matrix(rnorm(nrow(X)*q, sd=0.2), ncol=q)
+  } else if (identical(Z.init, "PCA")) {
+    X.pca <- prcomp(X)
+    Z <- X.pca$x[,1:q]
+  } else {
+    if (ncol(as.matrix(Z.init)) != q) warning("Mismatch between Z.init and q")
+    Z <- as.matrix(Z.init)[,1:q]
+  }
+
+  par <- c(1, 1, 0.1)
+
+
+  for (it in 1:iterations) {
+    # First optimize the hyper parameters
+    kernel.function <- function(x1, x2) gplvm.SE.dist(sum((x1-x2)^2), par[1], par[2], 0)
+    active.set <- IVM::IVM.regression(Z, active.set.size, par[3], kernel.function)$activeSet
+
+    par.optout <- optimx::optimx(par,
+                                 gplvm.hp.f,
+                                 gplvm.hp.gr,
+                                 Z=Z[active.set, ],
+                                 X=X[active.set, ],
+                                 Z.normal.prior=Z.normal.prior,
+                                 method="L-BFGS-B",
+                                 control=list(trace=T,
+                                              maximize=T,
+                                              kkt=FALSE,
+                                              maxit=1000,
+                                              starttests=TRUE))
+    par <- par.optout[1:3]
+
+    # Now select a new active set and optimize the latent variables
+    kernel.function <- function(x1, x2) gplvm.SE.dist(sum((x1-x2)^2), par[1], par[2], 0)
+    active.set <- IVM::IVM.regression(Z, active.set.size, par[3], kernel.function)$activeSet
+
+    K.active <- gplvm.SE(Z[active.set, ], par[1], par[2], 0)
+    K.chol.active <- chol(K.active)
+
+
+
+  }
 }

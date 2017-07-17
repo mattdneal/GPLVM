@@ -15,4 +15,3 @@ fit.A(target, K.bc)
 \description{
 Fit function coefficients for target latent variable values.
 }
-

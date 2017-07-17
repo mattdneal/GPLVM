@@ -14,4 +14,3 @@ fit.bcgplvm(X, q, iterations = 1000, plot.freq = 100, classes = 1,
 \description{
 Fit a back-constrained GPLVM model
 }
-

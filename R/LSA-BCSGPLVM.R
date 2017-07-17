@@ -8,8 +8,24 @@ ZPriorOptions_ <- c(ZPriorNorm_, ZPriorUnif_, ZPriorDisc_)
 ADAM_ <- "ADAM"
 SMD_ <- "SMD"
 
-approx.hessian.vector.product <- function(g, x, v, r=10^-8) {
-  return((g(x + r*v) - g(x - r*v)) / (2 * r))
+#' Title
+#'
+#' @param g
+#' @param x
+#' @param v
+#' @param r
+#'
+#' @return
+#' @import numDeriv
+#'
+#' @examples
+approx.hessian.vector.product <- function(g, x, v) {
+  num <- as.numeric(jacobian(function(r) g(x + r*v), 0))
+  return(num)
+}
+
+calc.W <- function(W.pre, Z) {
+  return(cbind(Z[W.pre[, 1], ], W.pre[, -1]))
 }
 
 arr_ind_conv_multipliers <- function(limits) {
@@ -97,10 +113,10 @@ class_var_matrices <- function(Z, classes, grad=FALSE) {
   }
   for (i in 1:nclasses) {
     index <- which(classes==levels(classes)[i])
-    M[i, ] <- colMeans(Z[index, ])
+    M[i, ] <- colMeans(Z[index, , drop=F])
     temp.sum <- M[i, ] - M_0
     S_b <- S_b + length(index) * outer(temp.sum, temp.sum)
-    Z.centered.class <- scale(Z[index, ], center=M[i, ], scale=F)
+    Z.centered.class <- scale(Z[index, , drop=F], center=M[i, ], scale=F)
     S_w <- S_w + t(Z.centered.class) %*% Z.centered.class
     if (grad) {
       for (l in index) {
@@ -239,7 +255,7 @@ LSA_BCSGPLVM.dK.dZij <- function(Z, K, i, j, l_Z, W.pre) {
   return(out)
 }
 
-LSA_BCSGPLVM.dL.dZ <- function(W, W.pre, X, Z,
+LSA_BCSGPLVM.dL.dZ <- function(W.pre, X, Z,
                                l, alpha, sigma,
                                Z.prior=c("normal", "uniform", "discriminative"),
                                K=NULL, dL.dK=NULL,
@@ -247,6 +263,7 @@ LSA_BCSGPLVM.dL.dZ <- function(W, W.pre, X, Z,
   Z.prior <- match.arg(Z.prior, ZPriorOptions_)
   X <- as.matrix(X)
   if (missing(K)) {
+    W <- calc.W(W.pre=W.pre, Z=Z)
     K <- LSA_BCSGPLVM.kernel(W=W, l=l, alpha=alpha, sigma=sigma)
   }
   if (missing(dL.dK)) {
@@ -266,9 +283,10 @@ LSA_BCSGPLVM.dL.dZ <- function(W, W.pre, X, Z,
   } else if (Z.prior==ZPriorDisc_) {
     out <- out + discriminative.prior(Z, Z.prior.params, grad=TRUE)$dL.dZ
   }
+  return(out)
 }
 
-LSA_BCSGPLVM.dL.dA <- function(W, W.pre, X, Z,
+LSA_BCSGPLVM.dL.dA <- function(W.pre, X, Z,
                                l, alpha, sigma,
                                K.bc,
                                Z.prior=c("normal", "uniform", "discriminative"),
@@ -277,12 +295,13 @@ LSA_BCSGPLVM.dL.dA <- function(W, W.pre, X, Z,
   Z.prior <- match.arg(Z.prior, ZPriorOptions_)
   X <- as.matrix(X)
   if (missing(K)) {
+    W <- calc.W(W.pre=W.pre, Z=Z)
     K <- LSA_BCSGPLVM.kernel(W=W, l=l, alpha=alpha, sigma=sigma)
   }
   if (missing(dL.dK)) {
     dL.dK <- dL.dK(X, K)
   }
-  dL.dZ <- LSA_BCSGPLVM.dL.dZ(W=W, W.pre=W.pre, X=X, Z=Z,
+  dL.dZ <- LSA_BCSGPLVM.dL.dZ(W.pre=W.pre, X=X, Z=Z,
                               l=l, alpha=alpha, sigma=sigma,
                               Z.prior=Z.prior, K=K, dL.dK=dL.dK,
                               Z.prior.params=Z.prior.params)
@@ -358,7 +377,7 @@ LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, cla
   }
   screen(par.screens[length(par.screens)])
   par(mar=c(0,0,0,0))
-  legend("center", legend=c(paste("It.", iteration), "alpha", "sigma", "l_Z", paste("l_S", 1:(ncol(par.hist) - 4), sep=""), "L"),
+  legend("center", legend=c(paste("It.", iteration), "alpha", "tau", "l_Z", paste("l_S", 1:(ncol(par.hist) - 4), sep=""), "L"),
          col=c(0, rainbow(ncol(par.hist))), lty=1, ncol=4, bty="n")
 
 
@@ -395,7 +414,9 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
                                 verbose=FALSE, Z.prior=c("normal", "uniform", "discriminative"),
                                 Z.prior.params=list(),
                                 optimization.method=c("SMD", "ADAM"),
-                                optimization.method.pars) {
+                                optimization.method.pars,
+                                ivm=FALSE, ivm.selection.size=NULL,
+                                optimizing.structure=FALSE) {
 
   optimization.method <- match.arg(optimization.method)
 
@@ -446,6 +467,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
     } else {
       smd.par.a_i <- rep(optimization.method.pars$par.initial.step.size, length.out=length(par))
     }
+    smd.par.a_i[par.fixed] <- 0
     smd.par.v_i <- rep(0, length(par))
     if (optimize.A) {
       if (length(optimization.method.pars$par.initial.step.size) == 1) {
@@ -475,23 +497,49 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
       Z <- bc.Z(K.bc, A)
     }
 
-    # Select a subset of points to use in this step
-    num.points <- prod(dim(X))
-    sample.points <- sample.int(n=num.points, size=points.in.approximation, replace=FALSE)
-    W.pre <- t(sapply(sample.points, vec_to_arr_index, limits=dim(X)))
-    # Order it now to make computing dL.dA_ij more efficient.
-    W.pre <- W.pre[order(W.pre[,1]),]
 
-    # Replace the first column with the Z values for those samples
-    W <- cbind(Z[W.pre[, 1], ], W.pre[, -1])
+    # Select a subset of points to use in this step
+    if (ivm) {
+      temp.sample.size <- ivm.selection.size
+    } else {
+      temp.sample.size <- points.in.approximation
+    }
+
+    num.points <- prod(dim(X))
+    if (optimizing.structure) {
+      num.to.preselect <- ceiling(temp.sample.size / prod(dim(X)[-1]))
+      preselect.index <- sample.int(n=dim(X)[1], size=num.to.preselect, replace=FALSE)
+      sample.points <- sample.int(n=length(preselect.index) * prod(dim(X)[-1]), size=temp.sample.size, replace=FALSE)
+      W.pre <- t(sapply(sample.points, vec_to_arr_index, limits=c(length(preselect.index), dim(X)[-1])))
+      W.pre[,1] <- preselect.index[W.pre[, 1]]
+    } else {
+      sample.points <- sample.int(n=num.points, size=temp.sample.size, replace=FALSE)
+      W.pre <- t(sapply(sample.points, vec_to_arr_index, limits=dim(X)))
+    }
+
+    W.pre <- W.pre[order(W.pre[,1]),]
+    W <- calc.W(W.pre=W.pre, Z=Z)
+
+    if (ivm) {
+      # select using IVM
+      kernel.function <- function(x1, x2) LSA_BCSGPLVM.kernel(W=rbind(x1, x2), l = par[-(1:2)], alpha = par[1], 0)[1,2]
+
+      ivm.sample.points <- IVM::IVM.regression(predictors = W,
+                                               activeSetSize = points.in.approximation,
+                                               variance = 1 / par[2],
+                                               kernel.function = kernel.function)
+
+      W.pre <- W.pre[ivm.sample.points$activeSet, ]
+      W <- W[ivm.sample.points$activeSet, ]
+    }
 
     X.sample <- as.matrix(X[W.pre])
 
     # Calculate the gradient w.r.t. the parameters
-    K <- LSA_BCSGPLVM.kernel(W, par[-(1:2)], par[1], par[2])
+    K <- LSA_BCSGPLVM.kernel(W, par[-(1:2)], par[1], 1 / par[2])
     if (verbose) print(paste("Squared sum of K off-diag:", sum((K^2)) - sum(diag(K)^2)))
     dL.dK <- dL.dK(X.sample, K)
-    L <- LSA_BCSGPLVM.L(W=W, X=X.sample, l=par[-(1:2)], alpha=par[1], sigma=par[2], Z.prior=Z.prior, K=K, Z.prior.params=Z.prior.params)
+    L <- LSA_BCSGPLVM.L(W=W, X=X.sample, l=par[-(1:2)], alpha=par[1], sigma=1 / par[2], Z.prior=Z.prior, K=K, Z.prior.params=Z.prior.params)
 
     if (optimize.A) {
       A.hist[iteration, , ] <- A
@@ -503,12 +551,18 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
     }
 
     if (optimize.A) {
-      dL.dA <- LSA_BCSGPLVM.dL.dA(W=W, W.pre=W.pre, X=X.sample, Z=Z,
-                                  l=par[-(1:2)], alpha=par[1], sigma=par[2],
+      dL.dA <- LSA_BCSGPLVM.dL.dA(W.pre=W.pre, X=X.sample, Z=Z,
+                                  l=par[-(1:2)], alpha=par[1], sigma=1 / par[2],
                                   K.bc=K.bc, Z.prior=Z.prior, K=K, dL.dK=dL.dK,
                                   Z.prior.params=Z.prior.params)
+    }
 
-      if (optimization.method == ADAM_) {
+    dL.dpar <- LSA_BCSGPLVM.dL.dpar(W, X.sample, par[-(1:2)], par[1], 1 / par[2], K=K, dL.dK=dL.dK)
+    dL.dpar[2] <- -dL.dpar[2] / par[2]^2
+
+    if (optimization.method == ADAM_) {
+
+      if (optimize.A) {
         m.A <- momentum.rate * m.A + (1 - momentum.rate) * dL.dA
         v.A <- learning.rate * v.A + (1 - learning.rate) * dL.dA^2
 
@@ -516,27 +570,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
         v.A.hat <- v.A / (1 - learning.rate^iteration)
         delta.A <- step.size / (sqrt(v.A.hat) + adam.epsilon) * m.A.hat
       }
-      if (optimization.method == SMD_) {
-        if (iteration != 1) {
-          smd.A.a_i <- smd.A.a_i * pmax(matrix(0.5, ncol=ncol(A), nrow=nrow(A)),
-                                           1 - smd.mu * smd.A.v_i * dL.dA)
-        }
-        delta.A <- smd.A.a_i * dL.dA
-        g <- function(x) {
-          Z <- bc.Z(K.bc, x)
-          LSA_BCSGPLVM.dL.dA(W=W, W.pre=W.pre, X=X.sample, Z=Z,
-                             l=par[-(1:2)], alpha=par[1], sigma=par[2],
-                             K.bc=K.bc, Z.prior=Z.prior,
-                             Z.prior.params=Z.prior.params)
-        }
-        smd.A.H_i.v_i <- approx.hessian.vector.product(g, A, smd.A.v_i, r=10^-8)
-        smd.A.v_i <- smd.lambda * smd.A.v_i + smd.A.a_i * (smd.A.H_i.v_i - dL.dA)
-      }
-    }
 
-    dL.dpar <- LSA_BCSGPLVM.dL.dpar(W, X.sample, par[-(1:2)], par[1], par[2], K=K, dL.dK=dL.dK)
-
-    if (optimization.method == ADAM_) {
       # Update the Adam variables
       m.par <- momentum.rate * m.par + (1 - momentum.rate) * dL.dpar
       v.par <- learning.rate * v.par + (1 - learning.rate) * dL.dpar^2
@@ -549,14 +583,59 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
     }
 
     if (optimization.method == SMD_) {
+      if (optimize.A) {
+
+        if (iteration != 1) {
+          smd.A.a_i <- smd.A.a_i * pmax(matrix(0.5, ncol=ncol(A), nrow=nrow(A)),
+                                        1 - smd.mu * smd.A.v_i * dL.dA)
+        }
+        delta.A <- smd.A.a_i * dL.dA
+        g <- function(x) {
+          par <- x[seq_along(par)]
+          A <- matrix(x[-seq_along(par)], nrow=nrow(A), ncol=ncol(A))
+          Z <- bc.Z(K.bc, A)
+          W <- calc.W(W.pre=W.pre, Z=Z)
+          K <- LSA_BCSGPLVM.kernel(W=W, l=par[-(1:2)], alpha=par[1], sigma=1 / par[2])
+          dL.dK <- dL.dK(X.sample, K)
+          dL.dA <- LSA_BCSGPLVM.dL.dA(W.pre=W.pre, X=X.sample, Z=Z,
+                                      l=par[-(1:2)], alpha=par[1], sigma=1 / par[2],
+                                      K.bc=K.bc, Z.prior=Z.prior,
+                                      Z.prior.params=Z.prior.params,
+                                      K=K, dL.dK=dL.dK)
+          dL.dpar <- LSA_BCSGPLVM.dL.dpar(W=W, X=X.sample, l=par[-(1:2)], alpha=par[1], sigma=1 / par[2],
+                                          K=K, dL.dK=dL.dK)
+          dL.dpar[2] <- -dL.dpar[2] / par[2]^2
+          return(c(dL.dpar, as.numeric(dL.dA)))
+        }
+        smd.H_i.v_i <- approx.hessian.vector.product(g,
+                                                     c(par, as.numeric(A)),
+                                                     c(smd.par.v_i, as.numeric(smd.A.v_i)))
+        smd.par.H_i.v_i <- smd.H_i.v_i[seq_along(par)]
+        smd.A.H_i.v_i <- matrix(smd.H_i.v_i[-seq_along(par)], nrow=nrow(A), ncol=ncol(A))
+        smd.A.v_i <- smd.lambda * smd.A.v_i + smd.A.a_i * (smd.A.H_i.v_i - dL.dA)
+      } else {
+        g <- function(x) {
+          out <- LSA_BCSGPLVM.dL.dpar(W, X.sample, x[-(1:2)], x[1], 1 / x[2])
+          out[2] <- -out[2] / x[2]^2
+          return(out)
+        }
+        smd.par.H_i.v_i <- approx.hessian.vector.product(g, par, smd.par.v_i)
+      }
+
       if (iteration != 1) {
         smd.par.a_i <- smd.par.a_i * pmax(0.5, 1 - smd.mu * smd.par.v_i * dL.dpar)
       }
+      if(verbose) print("dL.dpar")
+      if(verbose) print(dL.dpar)
+      if(verbose) print("a_i")
+      if(verbose) print(smd.par.a_i)
+      if(verbose) print("v_i")
+      if(verbose) print(smd.par.v_i)
+
       delta.par <- smd.par.a_i * dL.dpar
-      g <- function(x) {
-        LSA_BCSGPLVM.dL.dpar(W, X.sample, x[-(1:2)], x[1], x[2])
-      }
-      smd.par.H_i.v_i <- approx.hessian.vector.product(g, par, smd.par.v_i, r=10^-8)
+
+      if(verbose) print("H_i.v_i")
+      if(verbose) print(smd.par.H_i.v_i)
       smd.par.v_i <- smd.lambda * smd.par.v_i + smd.par.a_i * (smd.lambda * smd.par.H_i.v_i - dL.dpar)
     }
 
@@ -572,7 +651,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
     }
   }
 
-  L <- LSA_BCSGPLVM.L(W=W, X=X.sample, l=par[-(1:2)], alpha=par[1], sigma=par[2], Z.prior=Z.prior, Z.prior.params=Z.prior.params)
+  L <- LSA_BCSGPLVM.L(W=W, X=X.sample, l=par[-(1:2)], alpha=par[1], sigma=1 / par[2], Z.prior=Z.prior, Z.prior.params=Z.prior.params)
 
   par.hist[iteration + 1,] <- c(par, L)
 
@@ -606,7 +685,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
 # explicitly given in the leading columns of X, with the first column being the
 # sample ID, the following columns being the structure coordinates for that
 # point, and the final column being the data point value.
-
+#
 # Consider seperating into X.implicit (an array) and X.explicit (any additional
 # non-implicit structure, with possibly multiple arrays per sample and an
 # equivalence between row numbers of the two)
@@ -635,6 +714,8 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
 #' @param save.X
 #' @param optimization.method
 #' @param optimization.method.pars
+#' @param ivm select points in each step using IVM
+#' @param ivm.selection.size number of points to consider for each IVM selection, NULL for all points
 #'
 #' @return
 #' @export
@@ -656,11 +737,16 @@ fit.lsa_bcsgplvm <- function(X,
                              optimization.method=c("SMD", "ADAM"),
                              optimization.method.pars=NULL,
                              parameter.opt.iterations=300,
+                             par.fixed.par.opt=NULL,
                              par.fixed.A.opt=NULL,
                              verbose=FALSE,
                              subsample.flat.X=NULL,
                              Z.prior.params=list(),
-                             save.X=FALSE
+                             save.X=FALSE,
+                             optimize.structure.params.first=TRUE,
+                             optimize.all.params=FALSE,
+                             ivm=FALSE,
+                             ivm.selection.size=2048
 ) {
   optimization.method <- match.arg(optimization.method)
 
@@ -671,14 +757,14 @@ fit.lsa_bcsgplvm <- function(X,
       optimization.method.pars$learning.rate <- 0.9
       optimization.method.pars$momentum.rate <- 0.9
       optimization.method.pars$adam.epsilon <- 10^-8
-      optimization.method.pars$step.size.range <- c(10^-3, 10^-3)
-      optimization.method.pars$par.step.size.range <- c(10^-2, 10^-2)
+      optimization.method.pars$step.size.range <- c(10^-1, 10^-3)
+      optimization.method.pars$par.step.size.range <- c(10^-1, 10^-2)
     }
 
     if (optimization.method == SMD_) {
       optimization.method.pars$par.initial.step.size <- 10^-2
-      optimization.method.pars$A.initial.step.size <- 10^-3
-      optimization.method.pars$meta.step.size.mu <- 10^-5
+      optimization.method.pars$A.initial.step.size <- 10^-2
+      optimization.method.pars$meta.step.size.mu <- 10^-2
       optimization.method.pars$learning.rate.lambda <- 0.9
     }
   }
@@ -687,6 +773,10 @@ fit.lsa_bcsgplvm <- function(X,
   out <- list()
   out$Z.prior <- Z.prior
   out$Z.prior.params <- Z.prior.params
+
+  if (!is.element("IVM", installed.packages()[,1]) & ivm) {
+    stop("ivm=TRUE but IVM package is not installed. Rerun with ivm=FALSE.")
+  }
 
   if (save.X) {
     out$X <- X
@@ -788,19 +878,51 @@ fit.lsa_bcsgplvm <- function(X,
     par <- par.init
   }
 
-  #optimize with fixed A
-  opt <- LSA_BCSGPLVM.sgdopt(X=X, A.init=A.init, par.init=par, K.bc=K.bc,
-                             points.in.approximation=points.in.approximation,
-                             iterations=parameter.opt.iterations,
-                             optimize.A=FALSE, classes=classes, plot.freq=plot.freq,
-                             optimization.method=optimization.method,
-                             optimization.method.pars=optimization.method.pars,
-                             verbose=verbose, Z.prior=Z.prior,
-                             Z.prior.params=Z.prior.params)
+  # Optimize structure parameters assuming all samples are independent:
+  if (parameter.opt.iterations > 0 & optimize.structure.params.first) {
+    str.par <- par
+    # tau
+    str.par[2] <- 1
+    # l_Z
+    str.par[3] <- 10^-8
+    if (!is.null(par.fixed.par.opt)) {
+      str.fixed.par <- par.fixed.par.opt
+    } else {
+      str.fixed.par <- logical(length(str.par))
+    }
+    str.fixed.par[3] <- TRUE
+    opt <- LSA_BCSGPLVM.sgdopt(X=X, A.init=A.init, par.init=str.par, K.bc=K.bc,
+                               points.in.approximation=points.in.approximation,
+                               iterations=parameter.opt.iterations,
+                               optimize.A=FALSE, classes=classes, plot.freq=plot.freq,
+                               par.fixed=str.fixed.par,
+                               optimization.method=optimization.method,
+                               optimization.method.pars=optimization.method.pars,
+                               verbose=verbose, Z.prior=Z.prior,
+                               Z.prior.params=Z.prior.params,
+                               ivm=ivm, ivm.selection.size=ivm.selection.size,
+                               optimizing.structure = TRUE)
+    str.par <- opt$par
+    out$str.par.opt <- opt
 
-  par <- opt$par
+    par[-3] <- str.par[-3]
+  }
 
-  out$par.opt <- opt
+  #optimize with fixed A (not recommended for SMD or other optimizations with unbounded step sizes)
+  if (parameter.opt.iterations > 0 & optimize.all.params) {
+    opt <- LSA_BCSGPLVM.sgdopt(X=X, A.init=A.init, par.init=par, K.bc=K.bc,
+                               points.in.approximation=points.in.approximation,
+                               iterations=parameter.opt.iterations,
+                               optimize.A=FALSE, classes=classes, plot.freq=plot.freq,
+                               par.fixed=par.fixed.par.opt,
+                               optimization.method=optimization.method,
+                               optimization.method.pars=optimization.method.pars,
+                               verbose=verbose, Z.prior=Z.prior,
+                               Z.prior.params=Z.prior.params,
+                               ivm=ivm, ivm.selection.size=ivm.selection.size)
+    par <- opt$par
+    out$par.opt <- opt
+  }
 
   # Optimize pars and A
   opt <- LSA_BCSGPLVM.sgdopt(X=X, A.init=A.init, par.init=par, K.bc=K.bc,
@@ -811,7 +933,8 @@ fit.lsa_bcsgplvm <- function(X,
                              optimization.method=optimization.method,
                              optimization.method.pars=optimization.method.pars,
                              verbose=verbose, Z.prior=Z.prior,
-                             Z.prior.params=Z.prior.params)
+                             Z.prior.params=Z.prior.params,
+                             ivm=ivm, ivm.selection.size=ivm.selection.size)
 
 
   out$A.opt <- opt

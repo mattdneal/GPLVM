@@ -6,3 +6,5 @@
 /demo.R
 /latentZ2D.RData
 /regression_results.RData
+*.pdf
+*.py~

@@ -5,7 +5,7 @@
 \title{Fit an unconstrained GPLVM model}
 \usage{
 fit.gplvm(X, q, iterations = 1000, plot.freq = 100, classes = NULL,
-  Z.init = NULL, num.init.params = 100, Z.normal.prior)
+  Z.init = "PCA", num.init.params = 100, Z.normal.prior)
 }
 \arguments{
 \item{Z.normal.prior}{}
@@ -13,4 +13,3 @@ fit.gplvm(X, q, iterations = 1000, plot.freq = 100, classes = NULL,
 \description{
 Fit an unconstrained GPLVM model
 }
-

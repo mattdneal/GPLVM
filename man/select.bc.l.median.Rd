@@ -12,4 +12,3 @@ select.bc.l.median(X, target.median.cor)
 \description{
 Select a lengthscale for constrained optimization by median
 }
-

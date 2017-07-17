@@ -21,4 +21,3 @@ K_S <- GPLVM:::structured.kernel.Matrix(50, 50, c(10,10), 1)
 K_S <- K_S - Diagonal(nrow(K_S))
 X <- sample.from.model(Z, 50, K_S, K_Z)
 }
-

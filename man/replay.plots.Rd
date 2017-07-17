@@ -16,4 +16,3 @@ replay.plots(fit.lsa_bcsgplvm.output, time = 30, pps = 5)
 \description{
 Replay the plots from fitting an LSA_BCSGPLVM model
 }
-

@@ -15,4 +15,3 @@ structured.kernel.Matrix(nrows, ncols, C, alpha, grad = 0)
 \description{
 Structured data kernel
 }
-

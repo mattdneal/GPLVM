@@ -8,4 +8,5 @@ Description: A selection of functions for fitting a variety of Gaussian Process 
 License: GPL (>= 2)
 LazyData: TRUE
 Depends: Matrix, optimx, vegan, caret
-RoxygenNote: 5.0.1
+Suggests: IVM
+RoxygenNote: 6.0.1

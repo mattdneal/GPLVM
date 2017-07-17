@@ -14,4 +14,3 @@ generate.structured.dataset(num.samples = NULL, nrow, ncol,
 \description{
 Generate structured synthetic data
 }
-

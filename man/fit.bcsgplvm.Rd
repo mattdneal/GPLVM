@@ -33,4 +33,3 @@ bcsgplvm.model <- fit.bcsgplvm(X=X.noisy, nrows.X=20,
                                classes=classes, Z.init="PCA", K.bc.l=50,
                                probabilistic.trace.estimate=FALSE)
 }
-

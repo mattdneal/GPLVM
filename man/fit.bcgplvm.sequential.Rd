@@ -14,4 +14,3 @@ fit.bcgplvm.sequential(X, q, iterations = 1000, plot.freq = 100,
 \description{
 Fit a backconstrained GPLVM model sequentially
 }
-

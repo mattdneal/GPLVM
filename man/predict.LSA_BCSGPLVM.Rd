@@ -12,4 +12,3 @@
 \description{
 Predict data for an LSA_BCSGPLVM model
 }
-

@@ -13,4 +13,3 @@ noisyComparison(base.data, base.data.nrows, true.latent.vars, classes,
 \description{
 Compare BCGPLVM to BCSGPLVM
 }
-
