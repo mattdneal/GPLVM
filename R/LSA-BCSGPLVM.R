@@ -505,7 +505,9 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
       temp.sample.size <- points.in.approximation
     }
 
-    num.points <- prod(dim(X))
+
+    X.na.indices <- which(is.na(X))
+    num.points <- prod(dim(X)) - length(X.na.indices)
     if (optimizing.structure) {
       num.to.preselect <- ceiling(temp.sample.size / prod(dim(X)[-1]))
       preselect.index <- sample.int(n=dim(X)[1], size=num.to.preselect, replace=FALSE)
@@ -796,6 +798,24 @@ fit.lsa_bcsgplvm <- function(X,
     ind <- t(sapply(sampled.cols, vec_to_arr_index, limits=dim(X)[-1]))
     out$K.bc.X.ind <- ind
     X.unstructured <- sample.cols.from.array(X, ind)
+  }
+
+  #Deal with missing data in X - replace NAs with column mean in unstructured data
+  X.unstructured.na.indices <- which(is.na(X.unstructured), arr.ind=T)
+  if (length(X.unstructured.na.indices) > 0) {
+    warning("X contains NAs. Replacing with column mean in unstructured data for back constraints and PCA initialisation.")
+
+    missing.cols <- unique(X.unstructured.na.indices[,2])
+
+    X.col.means <- numeric(ncol(X.unstructured))
+    X.col.means[missing.cols] <- colMeans(X.unstructured[, missing.cols], na.rm=TRUE)
+
+    X.unstructured[X.unstructured.na.indices] <- X.col.means[X.unstructured.na.indices[,2]]
+
+    #if any column is totally missing, we drop it from X.unstructured:
+    if (any(is.na(X.col.means))) {
+      X.unstructured <- X.unstructured[, -which(is.na(X.col.means))]
+    }
   }
 
   if (is.null(K.bc.l)) {

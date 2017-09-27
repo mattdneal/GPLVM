@@ -56,7 +56,7 @@ if (FALSE) {
                             optimize.structure.params.first=TRUE,
                             optimize.all.params=T)
 
- g plvm.unstructured <- fit.lsa_bcsgplvm(data.n.array,
+ gplvm.unstructured <- fit.lsa_bcsgplvm(data.n.array,
                             q=2,
                             iterations=10000,
                             plot.freq=10,

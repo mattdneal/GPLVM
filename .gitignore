@@ -8,3 +8,4 @@
 /regression_results.RData
 *.pdf
 *.py~
+*.csv

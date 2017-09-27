@@ -2,6 +2,8 @@ if (FALSE) {
   library(viridis)
   library(plot3D)
   library(GPLVM)
+  library(ggplot2)
+  library(cowplot)
 
   num_dim <- 2
   num_clusters <- 3
@@ -30,14 +32,43 @@ if (FALSE) {
   for (i in 1:nrow(S.mat)) S.mat[i, ] <- i
   S <- cbind(as.numeric(S.mat), as.numeric(t(S.mat)))
   K_S <- GPLVM:::gplvm.SE(S, 3, 1, 1E-6)
-  K_Z <- GPLVM:::gplvm.SE(Z, 0.3, 1, 1E-6)
+  K_Z <- GPLVM:::gplvm.SE(Z, 0.4, 1, 1E-6)
   image(K_Z, useRaster=T)
   image(K_S)
   data <- sample.from.model(Z, 5, K_S, K_Z)
 
-
-
+  plotData <- as.data.frame(Z)
+  colnames(plotData) <- c("Latent var 1", "Latent var 2")
+  plotData <- cbind.data.frame(plotData, "Cluster"=as.character(cluster))
+  pointsToShow <- c()
+  for (i in 1:3) {
+    pointsToShow <- c(pointsToShow, sample(which(cluster==i), 2))
+  }
+  rightFigure <- function() {
+    defMar <- par("mar")
+    layout(matrix(1:6, 2))
+    showTitle <- F
+    topRow=T
+    for (i in pointsToShow) {
+      if (topRow) par(mar=c(3,2,10,2)) else par(mar=c(10,2,3,2))
+      topRow <- !topRow
+      if (showTitle) title <- paste("Cluster", cluster[i]) else title <- NULL
+      #showTitle <- !showTitle
+      image(matrix(data[i,], 5), zlim=range(data), col=viridis(256), main=title, xaxt="n", yaxt="n")
+    }
+    par(mar=defMar)
+  }
+  leftFigure <- ggplot(plotData, aes(y=`Latent var 2`, x=`Latent var 1`, color=Cluster)) +
+    geom_point(alpha=0.8, shape=16) +
+    scale_color_manual(values=viridis(3, end=0.8), guide=FALSE) +
+    geom_point(data=plotData[pointsToShow,], size=1.2, shape=1, color="red") +
+    theme(text = element_text(size=10))
+  figureWidth <- 210 - 38*2
+  png(filename="artificial_data_summary.png", width=figureWidth, height=floor(figureWidth*0.6), units="mm", res=600, pointsize=1)
+  plot_grid(leftFigure, rightFigure)
+  dev.off()
   data.n <- data + rnorm(prod(dim(data))) * 0.1
+
   data.pca <- prcomp(data)
   plot(data.pca)
   pairs(data.pca$x[,1:3], col=cluster)
@@ -48,7 +79,18 @@ if (FALSE) {
   data.n.array <- array(data.n, c(num_samples,5,5))
   image(data.n.array[2,,])
   dev.off()
-  gplvm <- fit.lsa_bcsgplvm(data.n.array,
+
+  if (FALSE) {
+    write.csv(as.numeric(data.n.array), file="synthetic_data_clusters.csv", row.names = F)
+    write.csv(cluster, file="synth_data_clusters_class.csv", row.names=F)
+  }
+
+  data.partially_observed <- data.n
+  hidden.indices <- sample(length(data.partially_observed), length(data.partially_observed)*0.1)
+  data.partially_observed[hidden.indices] <- NA
+  data.po.array <- array(data.partially_observed, c(num_samples,5,5))
+
+  gplvm <- fit.lsa_bcsgplvm(data.po.array,
                             q=num_dim + 1,
                             iterations=10000,
                             plot.freq=50,
