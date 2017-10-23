@@ -375,3 +375,45 @@ select.bc.l.median <- function(X, target.median.cor) {
   l <- X.dist.median / sqrt(-2*log(target.median.cor))
   return(l)
 }
+
+bc.l.selection.plots <- function(X, steps=1024, llim=NULL) {
+  X.dist <- as.matrix(dist(X))
+  X.dist.vec <- X.dist
+  diag(X.dist.vec) <- NA
+  X.dist.vec <- X.dist.vec[!is.na(X.dist.vec)]
+  plot(density(X.dist.vec), main="Density of dist(X)")
+  dispMatrix <- matrix(0, steps, steps)
+  ecdfMatrix <- matrix(0, steps, steps)
+  if (is.null(llim)) {
+    llim <- c(min(X.dist.vec), max(X.dist.vec))
+  }
+  lValues <- seq(llim[1], llim[2], length.out = steps)
+  corValues <- seq(0, 1, length.out = steps)
+  rownames(dispMatrix) <- lValues
+  colnames(dispMatrix) <- corValues
+  for (i in 1:steps) {
+    tempCor <- GPLVM:::gplvm.SE.dist(X.dist, lValues[i], 1)
+    diag(tempCor) <- NA
+    tempCor <- tempCor[!is.na(tempCor)]
+    tempDens <- density(tempCor, n=steps, from=0, to=1, bw=10^-2)
+    #plot(tempDens)
+    #temphist <- hist(tempCor, plot=F, breaks=corValues)$counts
+    #temphist <- (temphist - min(temphist)) / (max(temphist) - min(temphist))
+    dispMatrix[i, ] <- tempDens$y#(tempDens$y - min(tempDens$y))/(max(tempDens$y) - min(tempDens$y)) #temphist
+    tempECDF <- ecdf(tempCor)
+    ecdfMatrix[i, ] <- tempECDF(corValues)
+  }
+  image(dispMatrix, col=viridis::viridis(256), useRaster=T, axes=F, zlim=c(0, quantile(dispMatrix, 0.95)), main="Density smear", xlab="Lengthscale", ylab="Correlation")
+  ticks <- round(seq(1, steps, length.out=10))
+  axis(1, at=corValues[ticks], labels = signif(lValues[ticks], 2))
+  axis(2)
+
+  image(ecdfMatrix, col=viridis::viridis(256), useRaster=T, axes=F,main="eCDF smear", xlab="Lengthscale", ylab="Correlation")
+  ticks <- round(seq(1, steps, length.out=10))
+  axis(1, at=corValues[ticks], labels = signif(lValues[ticks], 2))
+  axis(2)
+
+  contour(ecdfMatrix, axes=F, add=T)
+
+
+}

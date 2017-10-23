@@ -491,6 +491,10 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
   }
 
 
+  # Initialize some variables which we will use to avoid including NA entries
+  X.na.indices <- which(is.na(X))
+  num.points <- prod(dim(X)) - length(X.na.indices)
+  X.num.not.na.per.row <- apply(X, 1, function(row) sum(!is.na(row)))
   while (iteration < iterations) {
     iteration <- iteration + 1
     if (optimize.A) {
@@ -505,17 +509,29 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
       temp.sample.size <- points.in.approximation
     }
 
-
-    X.na.indices <- which(is.na(X))
-    num.points <- prod(dim(X)) - length(X.na.indices)
     if (optimizing.structure) {
-      num.to.preselect <- ceiling(temp.sample.size / prod(dim(X)[-1]))
-      preselect.index <- sample.int(n=dim(X)[1], size=num.to.preselect, replace=FALSE)
-      sample.points <- sample.int(n=length(preselect.index) * prod(dim(X)[-1]), size=temp.sample.size, replace=FALSE)
-      W.pre <- t(sapply(sample.points, vec_to_arr_index, limits=c(length(preselect.index), dim(X)[-1])))
-      W.pre[,1] <- preselect.index[W.pre[, 1]]
+      num.non.na.points <- 0
+      randomly.sorted.indices <- sample(dim(X)[1], dim(X)[1], replace=FALSE)
+      current.index <- 0
+      while (num.non.na.points < temp.sample.size) {
+        current.index <- current.index + 1
+        num.non.na.points <- num.non.na.points + X.num.not.na.per.row[randomly.sorted.indices[current.index]]
+      }
+      preselect.index <- randomly.sorted.indices[seq(current.index)]
+      # Use slice.index to slice X by row - "slice.index(X, 1) %in% preselect.index"
+      # will return an array with the same dimensions as X which is TRUE that entry's
+      # row number is in preselect.index, and FALSE otherwise. This lets us subset
+      # based on the index of the first dimension
+      preselect.non.na.indices <- which((!is.na(X)) & (slice.index(X, 1) %in% preselect.index))
+      sample.points <- sample(preselect.non.na.indices, temp.sample.size, replace=FALSE)
+      W.pre <- t(sapply(sample.points, vec_to_arr_index, limits=dim(X)))
     } else {
       sample.points <- sample.int(n=num.points, size=temp.sample.size, replace=FALSE)
+      if (length(X.na.indices) > 0) {
+        for (na.index in X.na.indices) {
+          sample.points[sample.points >= na.index] <- sample.points[sample.points >= na.index] + 1
+        }
+      }
       W.pre <- t(sapply(sample.points, vec_to_arr_index, limits=dim(X)))
     }
 
@@ -800,22 +816,12 @@ fit.lsa_bcsgplvm <- function(X,
     X.unstructured <- sample.cols.from.array(X, ind)
   }
 
-  #Deal with missing data in X - replace NAs with column mean in unstructured data
+  #Deal with missing data in X - replace NAs with gaussian weighted average
   X.unstructured.na.indices <- which(is.na(X.unstructured), arr.ind=T)
   if (length(X.unstructured.na.indices) > 0) {
-    warning("X contains NAs. Replacing with column mean in unstructured data for back constraints and PCA initialisation.")
-
-    missing.cols <- unique(X.unstructured.na.indices[,2])
-
-    X.col.means <- numeric(ncol(X.unstructured))
-    X.col.means[missing.cols] <- colMeans(X.unstructured[, missing.cols], na.rm=TRUE)
-
-    X.unstructured[X.unstructured.na.indices] <- X.col.means[X.unstructured.na.indices[,2]]
-
-    #if any column is totally missing, we drop it from X.unstructured:
-    if (any(is.na(X.col.means))) {
-      X.unstructured <- X.unstructured[, -which(is.na(X.col.means))]
-    }
+    warning("X contains NAs. Inferring missing entries using weighted average of surrounding pixels for back constraints and PCA initialisation.")
+    if(any(apply(X, 1, function(x) all(is.na(x))))) stop("X contains an entry where all elements are missing.")
+    X.unstructured <-  t(apply(infer.missing.values(X), 1, as.numeric))
   }
 
   if (is.null(K.bc.l)) {
