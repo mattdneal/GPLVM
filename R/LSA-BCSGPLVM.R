@@ -717,11 +717,15 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
 #' @param iterations
 #' @param plot.freq
 #' @param classes
-#' @param Z.init Either a matrix of initial latent values, or "PCA" for PCA start values, or ISOMAP for ISOMAP start values.
+#' @param Z.init Either a matrix of initial latent values, or "PCA" for PCA
+#'   start values, or ISOMAP for ISOMAP start values.
 #' @param A.init
-#' @param K.bc.l
-#' @param K.bc.target.median
-#' @param par.init Vector of parameters: alpha, sigma, l_Z, followed by the lengthscales for the structural dimensions
+#' @param K.bc.l lengthscale to use for backconstraints. Either a numeric value
+#'   or "auto", which automatically determines an appropriate lengthscale.
+#' @param K.bc.selection.params parameters for automatic selection. See
+#'   \link{select.bc.l.centile} for more details.
+#' @param par.init Vector of parameters: alpha, sigma, l_Z, followed by the
+#'   lengthscales for the structural dimensions
 #' @param points.in.approximation
 #' @param Z.prior
 #' @param parameter.opt.iterations
@@ -733,7 +737,11 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
 #' @param optimization.method
 #' @param optimization.method.pars
 #' @param ivm select points in each step using IVM
-#' @param ivm.selection.size number of points to consider for each IVM selection, NULL for all points
+#' @param ivm.selection.size number of points to consider for each IVM
+#'   selection, NULL for all points
+#' @param par.fixed.par.opt
+#' @param optimize.structure.params.first
+#' @param optimize.all.params
 #'
 #' @return
 #' @export
@@ -748,7 +756,8 @@ fit.lsa_bcsgplvm <- function(X,
                              Z.init=NULL,
                              A.init=NULL,
                              K.bc.l="auto",
-                             K.bc.target.median=0.3,
+                             K.bc.selection.params=NULL,
+                             K.bc.l.plot.graphs=T,
                              Z.prior=c("normal", "uniform", "discriminative"),
                              par.init=NULL,
                              points.in.approximation=1024,
@@ -820,7 +829,7 @@ fit.lsa_bcsgplvm <- function(X,
   X.unstructured.na.indices <- which(is.na(X.unstructured), arr.ind=T)
   if (length(X.unstructured.na.indices) > 0) {
     warning("X contains NAs. Inferring missing entries using weighted average of surrounding pixels for back constraints and PCA initialisation.")
-    if(any(apply(X, 1, function(x) all(is.na(x))))) stop("X contains an entry where all elements are missing.")
+    if(any(apply(X, 1, function(x) all(is.na(x))))) stop("X contains an entry where all values are missing.")
     X.unstructured <-  t(apply(infer.missing.values(X), 1, as.numeric))
   }
 
@@ -832,6 +841,9 @@ fit.lsa_bcsgplvm <- function(X,
       K.bc.l <- select.bc.l.median(X.unstructured, target.median.cor = K.bc.target.median)
     }
     out$K.bc.l <- K.bc.l
+    if(K.bc.l.plot.graphs) {
+      bc.l.selection.plots(X.unstructured, chosen.lengthscale=K.bc.l)
+    }
     K.bc <- gplvm.SE(Z=X.unstructured, l=K.bc.l, alpha=1, sigma=0)
   }
 

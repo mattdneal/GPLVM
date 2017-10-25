@@ -6,23 +6,34 @@
 \usage{
 fit.lsa_bcsgplvm(X, q = 2, iterations = 1000, plot.freq = 100,
   classes = 1, Z.init = NULL, A.init = NULL, K.bc.l = "auto",
-  K.bc.target.median = 0.3, Z.prior = c("normal", "uniform",
-  "discriminative"), par.init = NULL, points.in.approximation = 1024,
-  optimization.method = c("SMD", "ADAM"), optimization.method.pars = NULL,
-  parameter.opt.iterations = 300, par.fixed.par.opt = NULL,
-  par.fixed.A.opt = NULL, verbose = FALSE, subsample.flat.X = NULL,
-  Z.prior.params = list(), save.X = FALSE,
+  K.bc.selection.params = NULL, K.bc.l.plot.graphs = T,
+  Z.prior = c("normal", "uniform", "discriminative"), par.init = NULL,
+  points.in.approximation = 1024, optimization.method = c("SMD", "ADAM"),
+  optimization.method.pars = NULL, parameter.opt.iterations = 300,
+  par.fixed.par.opt = NULL, par.fixed.A.opt = NULL, verbose = FALSE,
+  subsample.flat.X = NULL, Z.prior.params = list(), save.X = FALSE,
   optimize.structure.params.first = TRUE, optimize.all.params = FALSE,
   ivm = FALSE, ivm.selection.size = 2048)
 }
 \arguments{
-\item{Z.init}{Either a matrix of initial latent values, or "PCA" for PCA start values, or ISOMAP for ISOMAP start values.}
+\item{Z.init}{Either a matrix of initial latent values, or "PCA" for PCA
+start values, or ISOMAP for ISOMAP start values.}
 
-\item{par.init}{Vector of parameters: alpha, sigma, l_Z, followed by the lengthscales for the structural dimensions}
+\item{K.bc.l}{lengthscale to use for backconstraints. Either a numeric value
+or "auto", which automatically determines an appropriate lengthscale.}
+
+\item{K.bc.selection.params}{parameters for automatic selection. See
+\link{select.bc.l.centile} for more details.}
+
+\item{par.init}{Vector of parameters: alpha, sigma, l_Z, followed by the
+lengthscales for the structural dimensions}
+
+\item{optimize.all.params}{}
 
 \item{ivm}{select points in each step using IVM}
 
-\item{ivm.selection.size}{number of points to consider for each IVM selection, NULL for all points}
+\item{ivm.selection.size}{number of points to consider for each IVM
+selection, NULL for all points}
 }
 \description{
 Fit a large scale approximation back constrained structured GPLVM model

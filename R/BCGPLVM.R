@@ -362,6 +362,27 @@ select.bc.l.minmax <- function(X, target.max.min, target.min.max) {
            X.dist=X.dist, target.max.min=target.max.min, target.min.max=target.min.max)$minimum
 }
 
+#' Select a lengthscale for constrained optimization by specifying the n'th
+#' centile of the off-diagonal entries of the correlation matrix
+#'
+#' @param params a vector with named entries "centile" and "target"
+#' @param X
+#'
+#' @return
+#' @export
+select.bc.l.centile <- function(X, params=NULL) {
+  if (is.null(params)) {
+    params <- c(centile=0.9, target=0.5)
+  }
+  if (any(!(c("centile", "target") %in% names(params)))) {
+    stop("params does not contain named entries for 'centile' and 'target'")
+  }
+  X.dist <- as.matrix(dist(X))
+  X.dist.centile <- quantile(X.dist[X.dist!=0], 1-params["centile"])
+  l <- as.numeric(X.dist.centile / sqrt(-2*log(params["target"])))
+  return(l)
+}
+
 #' Select a lengthscale for constrained optimization by median
 #'
 #' @param X
@@ -370,13 +391,10 @@ select.bc.l.minmax <- function(X, target.max.min, target.min.max) {
 #' @return
 #' @export
 select.bc.l.median <- function(X, target.median.cor) {
-  X.dist <- as.matrix(dist(X))
-  X.dist.median <- median(X.dist[X.dist!=0])
-  l <- X.dist.median / sqrt(-2*log(target.median.cor))
-  return(l)
+  return(select.bc.l.centile(X, c(centile=0.5, target=target.median.cor)))
 }
 
-bc.l.selection.plots <- function(X, steps=1024, llim=NULL) {
+bc.l.selection.plots <- function(X, steps=1024, llim=NULL, chosen.lengthscale=NULL) {
   X.dist <- as.matrix(dist(X))
   X.dist.vec <- X.dist
   diag(X.dist.vec) <- NA
@@ -386,6 +404,10 @@ bc.l.selection.plots <- function(X, steps=1024, llim=NULL) {
   ecdfMatrix <- matrix(0, steps, steps)
   if (is.null(llim)) {
     llim <- c(min(X.dist.vec), max(X.dist.vec))
+  }
+  #rescale chosen.lengthscale to w.r.t. llim sit in [0,1]
+  if(!is.null(chosen.lengthscale)) {
+    chosen.lengthscale.scaled <- chosen.lengthscale - llim[1] / (llim[2] - llim[1])
   }
   lValues <- seq(llim[1], llim[2], length.out = steps)
   corValues <- seq(0, 1, length.out = steps)
@@ -403,15 +425,22 @@ bc.l.selection.plots <- function(X, steps=1024, llim=NULL) {
     tempECDF <- ecdf(tempCor)
     ecdfMatrix[i, ] <- tempECDF(corValues)
   }
-  image(dispMatrix, col=viridis::viridis(256), useRaster=T, axes=F, zlim=c(0, quantile(dispMatrix, 0.95)), main="Density smear", xlab="Lengthscale", ylab="Correlation")
+  image(dispMatrix, col=viridis::viridis(256), useRaster=T, axes=F, zlim=c(0, quantile(dispMatrix, 0.95)), main="Correlation Matrix Density Smear", xlab="Lengthscale", ylab="Correlation")
   ticks <- round(seq(1, steps, length.out=10))
   axis(1, at=corValues[ticks], labels = signif(lValues[ticks], 2))
   axis(2)
+  if(!is.null(chosen.lengthscale)) {
+    abline(v=chosen.lengthscale.scaled, lty=2)
+  }
 
   image(ecdfMatrix, col=viridis::viridis(256), useRaster=T, axes=F,main="eCDF smear", xlab="Lengthscale", ylab="Correlation")
   ticks <- round(seq(1, steps, length.out=10))
   axis(1, at=corValues[ticks], labels = signif(lValues[ticks], 2))
   axis(2)
+  if(!is.null(chosen.lengthscale)) {
+    abline(v=chosen.lengthscale.scaled, lty=2)
+  }
+
 
   contour(ecdfMatrix, axes=F, add=T)
 
