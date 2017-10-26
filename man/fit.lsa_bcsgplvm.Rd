@@ -6,7 +6,7 @@
 \usage{
 fit.lsa_bcsgplvm(X, q = 2, iterations = 1000, plot.freq = 100,
   classes = 1, Z.init = NULL, A.init = NULL, K.bc.l = "auto",
-  K.bc.selection.params = NULL, K.bc.l.plot.graphs = T,
+  K.bc.l.selection.params = NULL, K.bc.l.plot.graphs = T,
   Z.prior = c("normal", "uniform", "discriminative"), par.init = NULL,
   points.in.approximation = 1024, optimization.method = c("SMD", "ADAM"),
   optimization.method.pars = NULL, parameter.opt.iterations = 300,
@@ -22,13 +22,14 @@ start values, or ISOMAP for ISOMAP start values.}
 \item{K.bc.l}{lengthscale to use for backconstraints. Either a numeric value
 or "auto", which automatically determines an appropriate lengthscale.}
 
-\item{K.bc.selection.params}{parameters for automatic selection. See
-\link{select.bc.l.centile} for more details.}
+\item{K.bc.l.selection.params}{parameters for algorithm which automatically
+selects backconstraint lengthscale. See \link{select.bc.l.centile} for
+details.}
+
+\item{K.bc.l.plot.graphs}{}
 
 \item{par.init}{Vector of parameters: alpha, sigma, l_Z, followed by the
 lengthscales for the structural dimensions}
-
-\item{optimize.all.params}{}
 
 \item{ivm}{select points in each step using IVM}
 

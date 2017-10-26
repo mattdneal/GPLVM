@@ -722,8 +722,9 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
 #' @param A.init
 #' @param K.bc.l lengthscale to use for backconstraints. Either a numeric value
 #'   or "auto", which automatically determines an appropriate lengthscale.
-#' @param K.bc.selection.params parameters for automatic selection. See
-#'   \link{select.bc.l.centile} for more details.
+#' @param K.bc.l.selection.params parameters for algorithm which automatically
+#'   selects backconstraint lengthscale. See \link{select.bc.l.centile} for
+#'   details.
 #' @param par.init Vector of parameters: alpha, sigma, l_Z, followed by the
 #'   lengthscales for the structural dimensions
 #' @param points.in.approximation
@@ -742,6 +743,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
 #' @param par.fixed.par.opt
 #' @param optimize.structure.params.first
 #' @param optimize.all.params
+#' @param K.bc.l.plot.graphs
 #'
 #' @return
 #' @export
@@ -756,7 +758,7 @@ fit.lsa_bcsgplvm <- function(X,
                              Z.init=NULL,
                              A.init=NULL,
                              K.bc.l="auto",
-                             K.bc.selection.params=NULL,
+                             K.bc.l.selection.params=NULL,
                              K.bc.l.plot.graphs=T,
                              Z.prior=c("normal", "uniform", "discriminative"),
                              par.init=NULL,
@@ -838,7 +840,7 @@ fit.lsa_bcsgplvm <- function(X,
     K.bc <- diag(nrow(X.unstructured))
   } else {
     if (K.bc.l == "auto") {
-      K.bc.l <- select.bc.l.median(X.unstructured, target.median.cor = K.bc.target.median)
+      K.bc.l <- select.bc.l.centile(X.unstructured, K.bc.l.selection.params)
     }
     out$K.bc.l <- K.bc.l
     if(K.bc.l.plot.graphs) {
