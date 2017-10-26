@@ -407,7 +407,7 @@ bc.l.selection.plots <- function(X, steps=1024, llim=NULL, chosen.lengthscale=NU
   }
   #rescale chosen.lengthscale to w.r.t. llim sit in [0,1]
   if(!is.null(chosen.lengthscale)) {
-    chosen.lengthscale.scaled <- chosen.lengthscale - llim[1] / (llim[2] - llim[1])
+    chosen.lengthscale.scaled <- (chosen.lengthscale - llim[1]) / (llim[2] - llim[1])
   }
   lValues <- seq(llim[1], llim[2], length.out = steps)
   corValues <- seq(0, 1, length.out = steps)
