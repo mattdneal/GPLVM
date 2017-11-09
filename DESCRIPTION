@@ -1,12 +1,12 @@
 Package: GPLVM
 Type: Package
 Title: Gaussian Process Latent Variable Models
-Version: 0.3.3
+Version: 0.3.4
 Author: Matthew Neal [aut, cre]
 Maintainer: Matthew Neal <mattdneal@gmail.com>
 Description: A selection of functions for fitting a variety of Gaussian Process Latent Variable Models
 License: GPL (>= 2)
 LazyData: TRUE
-Depends: Matrix, optimx, vegan, caret
+Depends: Matrix, optimx, vegan, caret, viridis
 Suggests: IVM
 RoxygenNote: 6.0.1

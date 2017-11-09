@@ -98,7 +98,6 @@ if (FALSE) {
                             Z.init=NULL,
                             A.init=NULL,
                             K.bc.l="auto",
-                            K.bc.target.median=0.00001,
                             Z.prior="normal",
                             par.init=NULL,
                             points.in.approximation=100,

@@ -330,9 +330,11 @@ array_to_flat_matrix <- function(data.array) {
   return(out)
 }
 
-LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, classes, K.bc) {
+LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, classes, K.bc, max.iterations=1000) {
   close.screen(all.screens=TRUE)
   num.pars <- ncol(par.hist)
+  num.iterations <- nrow(par.hist)
+  iteration.range <- c(max(1, num.iteration - max.iterations + 1), num.iterations)
   if (plot.Z) {
     split.screen(c(1, 2))
     par.screens <- split.screen(c(num.pars + 1, 1), 1)
@@ -360,12 +362,12 @@ LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, cla
   for (i in 1:ncol(par.hist)) {
     screen(par.screens[i])
     par(mar=c(0,4,0,4)+0.1)
-    plot(1:iteration, par.hist[1:iteration, i],
-         type="l", xlim=c(0, iteration),
-         ylim=range(par.hist[1:iteration, i]),
-         axes=F, ann=F, col=rainbow(ncol(par.hist))[i])
+    plot(iteration.range, par.hist[iteration.range, i],
+         type="l", xlim=c(0, iteration.range[2]),
+         ylim=range(par.hist[iteration.range, i]),
+         axes=F, ann=F, col=viridis::viridis(ncol(par.hist))[i])
     box()
-    range <- range(par.hist[1:iteration, i])
+    range <- range(par.hist[iteration.range, i])
     at <- mean(range)
     at <- c(at - diff(range)/3, at, at + diff(range)/3)
     labels <- format(at, digits=2)
@@ -378,10 +380,11 @@ LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, cla
   screen(par.screens[length(par.screens)])
   par(mar=c(0,0,0,0))
   legend("center", legend=c(paste("It.", iteration), "alpha", "tau", "l_Z", paste("l_S", 1:(ncol(par.hist) - 4), sep=""), "L"),
-         col=c(0, rainbow(ncol(par.hist))), lty=1, ncol=4, bty="n")
+         col=c(0, viridis::viridis(ncol(par.hist))), lty=1, ncol=4, bty="n")
 
 
   if (plot.Z) {
+    class.colours <- viridis::viridis(max(classes))[classes]
     if (q > 2) {
       screen.num <- 0
       for (i in 1:(q-1)) {
@@ -389,20 +392,20 @@ LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, cla
           screen.num <- screen.num + 1
           screen(plot.screens[screen.num])
           par(mar=c(0,0,0,0) + 0.1)
-          plot(Z[, c(i,j)], col=classes, axes=FALSE, ann=FALSE)
-          arrows(prev.Z[, i], prev.Z[, j], Z[, i], Z[, j], length=0.05, col=classes)
+          plot(Z[, c(i,j)], col=class.colours, axes=FALSE, ann=FALSE)
+          arrows(prev.Z[, i], prev.Z[, j], Z[, i], Z[, j], length=0.05, col=class.colours)
           box()
         }
       }
       par(mar=c(5.1,4.1,4.1,2.1))
     } else if (q == 2) {
       screen(2)
-      plot(Z, col=classes)
-      arrows(prev.Z[, 1], prev.Z[, 2], Z[, 1], Z[, 2], length=0.05, col=classes)
+      plot(Z, col=class.colours)
+      arrows(prev.Z[, 1], prev.Z[, 2], Z[, 1], Z[, 2], length=0.05, col=class.colours)
     } else {
       screen(2)
-      plot(as.numeric(Z), rep(0, length(Z)), col=classes)
-      arrows(as.numeric(prev.Z), rep(0, length(Z)), as.numeric(Z), rep(0, length(Z)), length=0.05, col=classes)
+      plot(as.numeric(Z), rep(0, length(Z)), col=class.colours)
+      arrows(as.numeric(prev.Z), rep(0, length(Z)), as.numeric(Z), rep(0, length(Z)), length=0.05, col=class.colours)
     }
   }
   close.screen(all.screens=TRUE)
