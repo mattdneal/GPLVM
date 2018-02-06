@@ -870,7 +870,7 @@ fit.lsa_bcsgplvm <- function(X,
       A.init <- A.init - M
 
       Z.sd <- apply(t(Z) - colMeans(Z), 1, sd)
-      A.init <- A.init %*% diag(1 / Z.sd)
+      A.init <- A.init %*% diag(1 / Z.sd, nrow=length(Z.sd), ncol=length(Z.sd))
       Z <- bc.Z(K.bc=K.bc, A=A.init)
       Z.svd <- svd(Z)
       A.init <- A.init %*% Z.svd$v
