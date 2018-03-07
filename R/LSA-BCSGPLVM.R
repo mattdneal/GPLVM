@@ -864,7 +864,7 @@ fit.lsa_bcsgplvm <- function(X,
       # Center and normalise the Z values
       Z <- bc.Z(K.bc=K.bc, A=A.init)
       m <- colMeans(Z)
-      K.bc.chol <- chol(K.bc)
+      K.bc.chol <- chol(K.bc + diag(10^-3, nrow(K.bc)))
       M.1 <- backsolve(K.bc.chol, forwardsolve(t(K.bc.chol), rep(1, nrow(K.bc))))
       M <- matrix(M.1, nrow=nrow(A.init), ncol=ncol(A.init)) %*% diag(m, nrow=length(m), ncol=length(m))
       A.init <- A.init - M
