@@ -199,14 +199,7 @@ LSA_BCSGPLVM.L <- function(W, X, l, alpha, sigma, q, Z.prior=c("normal", "unifor
     Z.prior.term <- discriminative.prior(Z, Z.prior.params)$L
   }
 
-  # prior on l_Z for ARD
-  if (length(l) == ncol(W)) {
-    l_Z.prior.term <- -q/2 * log(2 * 10^2 * pi) - 1 / (2 * 10 ^2) * sum(as.numeric(l[1:q])^2)
-  } else {
-    l_Z.prior.term <- 0
-  }
-
-  return(N * log(2 * pi) / 2 - K.log.det / 2 - 1/2 * sum(K.inv.X * X) + Z.prior.term + l_Z.prior.term)
+  return(N * log(2 * pi) / 2 - K.log.det / 2 - 1/2 * sum(K.inv.X * X) + Z.prior.term)
 }
 
 LSA_BCSGPLVM.dK.dL_Z <- function(W, l, K, q) {
@@ -259,8 +252,6 @@ LSA_BCSGPLVM.dL.dpar <- function(W, X, l, alpha, sigma, q, K=NULL, dL.dK=NULL) {
       dK.dl_Zi <- LSA_BCSGPLVM.dK.dL_Zi(W, l, K, i)
       dL.dpar[2 + i] <- sum(dL.dK * dK.dl_Zi)
     }
-    # normal prior on l_Z
-    dL.dpar[3:(2+q)] <- dL.dpar[3:(2+q)] - l[1:q] / 10^2
   } else {
     dK.dl_Z <-LSA_BCSGPLVM.dK.dL_Z(W, l, K)
     dL.dpar[3] <- sum(dL.dK * dK.dl_Z)
@@ -300,6 +291,9 @@ LSA_BCSGPLVM.dL.dZ <- function(W.pre, X, Z,
                                K=NULL, dL.dK=NULL,
                                Z.prior.params=list()) {
   Z.prior <- match.arg(Z.prior, ZPriorOptions_)
+  if (length(l) == ncol(W.pre)) {
+    l <- rep(l[1], ncol(Z))
+  }
   X <- as.matrix(X)
   if (missing(K)) {
     W <- calc.W(W.pre=W.pre, Z=Z)
@@ -369,7 +363,7 @@ array_to_flat_matrix <- function(data.array) {
   return(out)
 }
 
-LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, classes, K.bc, max.iterations=1000) {
+LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, classes, K.bc, ARD, max.iterations=1000) {
   close.screen(all.screens=TRUE)
   num.pars <- ncol(par.hist)
   iteration.range <- max(1, iteration - max.iterations + 1):iteration
@@ -426,6 +420,11 @@ LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, cla
     par(mar=c(5.1,4.1,4.1,2.1))
   }
   if (plot.Z) {
+    if (ARD) {
+      Z <- t(t(Z) / par.hist[iteration, 3:(2+ncol(Z))])
+      prev.Z <- t(t(prev.Z) / par.hist[iteration, 3:(2+ncol(Z))])
+    }
+    lim <- range(c(Z, prev.Z))
     class.colours <- viridis::viridis(max(classes), end=0.8)[classes]
     if (q > 2) {
       screen.num <- 0
@@ -434,7 +433,7 @@ LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, cla
           screen.num <- screen.num + 1
           screen(plot.screens[screen.num])
           par(mar=c(0,0,0,0) + 0.1)
-          plot(Z[, c(i,j)], col=class.colours, axes=FALSE, ann=FALSE)
+          plot(Z[, c(i,j)], col=class.colours, axes=FALSE, ann=FALSE, xlim=lim, ylim=lim)
           arrows(prev.Z[, i], prev.Z[, j], Z[, i], Z[, j], length=0.05, col=class.colours)
           box()
         }
@@ -442,7 +441,7 @@ LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, cla
       par(mar=c(5.1,4.1,4.1,2.1))
     } else if (q == 2) {
       screen(2)
-      plot(Z, col=class.colours)
+      plot(Z, col=class.colours, xlim=lim, ylim=lim)
       arrows(prev.Z[, 1], prev.Z[, 2], Z[, 1], Z[, 2], length=0.05, col=class.colours)
     } else {
       screen(2)
@@ -478,6 +477,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
   par <- par.init
   Z <- bc.Z(K.bc, A)
   q <- ncol(Z)
+  ARD <- length(par) == q + length(dim(X)) + 1
   delta.A <- matrix(0, nrow=nrow(A), ncol=ncol(A))
   delta.par <- numeric(length(par))
 
@@ -610,7 +610,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
     par.hist[iteration, ] <- c(par, L)
 
     if (iteration > 1 & plot.freq != 0 & iteration %% plot.freq == 0) {
-      LSA_BCSGPLVM.plot_iteration(A.hist, par.hist, optimize.A, iteration, classes, K.bc)
+      LSA_BCSGPLVM.plot_iteration(A.hist, par.hist, optimize.A, iteration, classes, K.bc, ARD)
     }
 
     if (optimize.A) {
@@ -821,7 +821,7 @@ fit.lsa_bcsgplvm <- function(X,
                              optimize.all.params=FALSE,
                              ivm=FALSE,
                              ivm.selection.size=2048,
-                             ARD=T
+                             ARD=F
 ) {
   optimization.method <- match.arg(optimization.method)
 
@@ -848,6 +848,8 @@ fit.lsa_bcsgplvm <- function(X,
   out <- list()
   out$Z.prior <- Z.prior
   out$Z.prior.params <- Z.prior.params
+
+  out$ARD <- ARD
 
   if (!is.element("IVM", installed.packages()[,1]) & ivm) {
     stop("ivm=TRUE but IVM package is not installed. Rerun with ivm=FALSE.")
@@ -912,8 +914,6 @@ fit.lsa_bcsgplvm <- function(X,
       Z.sd <- apply(t(Z) - colMeans(Z), 1, sd)
       A.init <- A.init %*% diag(1 / Z.sd, nrow=length(Z.sd), ncol=length(Z.sd))
       Z <- bc.Z(K.bc=K.bc, A=A.init)
-      Z.svd <- svd(Z)
-      A.init <- A.init %*% Z.svd$v
     } else {
       if (ncol(as.matrix(A.init)) != q) stop("Mismatch between A.init and q")
       A.init <- as.matrix(A.init)
@@ -982,13 +982,18 @@ fit.lsa_bcsgplvm <- function(X,
     # tau
     str.par[2] <- 1
     # l_Z
-    str.par[3:(q+2)] <- 10^-8
     if (!is.null(par.fixed.par.opt)) {
       str.fixed.par <- par.fixed.par.opt
     } else {
       str.fixed.par <- logical(length(str.par))
     }
-    str.fixed.par[3:(q+2)] <- TRUE
+    if (ARD) {
+      str.par[3:(q+2)] <- 10^-8
+      str.fixed.par[3:(q+2)] <- TRUE
+    } else {
+      str.par[3] <- 10^-8
+      str.fixed.par[3] <- TRUE
+    }
     opt <- LSA_BCSGPLVM.sgdopt(X=X, A.init=A.init, par.init=str.par, K.bc=K.bc,
                                points.in.approximation=points.in.approximation,
                                iterations=parameter.opt.iterations,
@@ -1003,7 +1008,11 @@ fit.lsa_bcsgplvm <- function(X,
     str.par <- opt$par
     out$str.par.opt <- opt
 
-    par[-(3:(q+2))] <- str.par[-(3:(q+2))]
+    if (ARD) {
+      par[-(3:(q+2))] <- str.par[-(3:(q+2))]
+    } else {
+      par[-3] <- str.par[-3]
+    }
   }
 
   #optimize with fixed A (not recommended for SMD or other optimizations with unbounded step sizes)
@@ -1069,7 +1078,7 @@ replay.plots <- function(fit.lsa_bcsgplvm.output, time=30, pps=5) {
   it.start.time <- proc.time()[3]
   for (iteration in 2:nrow(par.hist)) {
     if (iteration%%plot.freq==0) {
-      LSA_BCSGPLVM.plot_iteration(A.hist, par.hist, TRUE, iteration, classes, K.bc)
+      LSA_BCSGPLVM.plot_iteration(A.hist, par.hist, TRUE, iteration, classes, K.bc, fit.lsa_bcsgplvm.output$ARD)
       it.run.time <- proc.time()[3] - it.start.time
       it.start.time <- proc.time()[3]
       time.mean <- (time.mean * num.it + it.run.time) / (num.it + 1)
