@@ -10,10 +10,10 @@ bc.L <- function(A, X, l, alpha, sigma, K.bc, Z.normal.prior) {
 }
 
 
-dZ.dAij <- function(Z, K.bc, i, j) {
-  out <- matrix(0, nrow=nrow(Z), ncol=ncol(Z))
-  out[, j] <- K.bc[, i]
-  return(out)
+dZ.dAij.pointwise <- function(Z, K.bc, i, j, X) {
+  # dZ.dAij <- matrix(0, nrow=nrow(Z), ncol=ncol(Z))
+  # dZ.dAij[, j] <- K.bc[, i]
+  return(sum(X[, j] * K.bc[, i]))
 }
 
 dL.dA <- function(X, Z, l, alpha, sigma, K.bc, K, dL.dK, Z.normal.prior) {
@@ -21,7 +21,7 @@ dL.dA <- function(X, Z, l, alpha, sigma, K.bc, K, dL.dK, Z.normal.prior) {
   out <- matrix(0, nrow=nrow(Z), ncol=ncol(Z))
   for (i in 1:nrow(Z)) {
     for (j in 1:ncol(Z)) {
-      out[i, j] <- sum(dL.dZ * dZ.dAij(Z, K.bc, i, j))
+      out[i, j] <- dZ.dAij.pointwise(Z, K.bc, i, j, dL.dZ)
     }
   }
   return(out)
@@ -88,7 +88,7 @@ dS.dA <- function(target, Z, K.bc) {
   out <- matrix(0, nrow=nrow(Z), ncol=ncol(Z))
   for (i in 1:nrow(Z)) {
     for (j in 1:ncol(Z)) {
-      out[i, j] <- sum(dS.dZ * dZ.dAij(Z, K.bc, i, j))
+      out[i, j] <- dZ.dAij.pointwise(Z, K.bc, i, j, dS.dZ)
     }
   }
   return(out)

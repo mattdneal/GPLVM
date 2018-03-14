@@ -357,7 +357,7 @@ LSA_BCSGPLVM.dL.dA <- function(W.pre, X, Z,
   out <- matrix(0, nrow=nrow(Z), ncol=ncol(Z))
   for (i in 1:nrow(Z)) {
     for (j in 1:ncol(Z)) {
-      out[i, j] <- sum(dL.dZ[, j] * dZ.dAij(Z, K.bc, i, j)[, j])
+      out[i, j] <- dZ.dAij.pointwise(Z, K.bc, i, j, dL.dZ)
     }
   }
   return(out)
