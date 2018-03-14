@@ -83,7 +83,7 @@ LSA_BCSGPLVM.kernel <- function(W, l, alpha, sigma) {
     z.dim <- ncol(W) - structure.dim
     l <- c(rep(l[1], z.dim), l[-1])
   }
-  W <- t(t(W) / l)
+  W <- t(t(W) * l)
   W.dist <- as.matrix(dist(W))
   K <- alpha^2 * exp(-W.dist^2 / 2)
   diag(K) <- diag(K) + sigma^2
@@ -202,21 +202,21 @@ LSA_BCSGPLVM.L <- function(W, X, l, alpha, sigma, q, Z.prior=c("normal", "unifor
   return(N * log(2 * pi) / 2 - K.log.det / 2 - 1/2 * sum(K.inv.X * X) + Z.prior.term)
 }
 
-LSA_BCSGPLVM.dK.dL_Z <- function(W, l, K, q) {
+LSA_BCSGPLVM.dK.dl_Z <- function(W, l, K, q) {
   Z <- LSA_BCSGPLVM.Z.from.W(W, l)
   Z.dist <- as.matrix(dist(Z)^2)
-  out <- Z.dist / l[1]^3 * K
+  out <- -Z.dist * l[1] * K
   return(out)
 }
 
-LSA_BCSGPLVM.dK.dL_Zi <- function(W, l, K, i) {
+LSA_BCSGPLVM.dK.dl_Zi <- function(W, l, K, i) {
   Z_i <- W[, i]
   Z_i.dist <- as.matrix(dist(Z_i)^2)
-  out <- Z_i.dist / l[i]^3 * K
+  out <- -Z_i.dist * l[i] * K
   return(out)
 }
 
-LSA_BCSGPLVM.dK.dL_S_i <- function(W, l, K, i, q) {
+LSA_BCSGPLVM.dK.dl_S_i <- function(W, l, K, i, q) {
   if (length(l) == ncol(W)) {
     #ARD
     l_Si <- l[q + i]
@@ -225,7 +225,7 @@ LSA_BCSGPLVM.dK.dL_S_i <- function(W, l, K, i, q) {
   }
   S_i <- W[, i + q]
   S_i.dist <- as.matrix(dist(S_i)^2)
-  out <- S_i.dist / l_Si^3 * K
+  out <- -S_i.dist * l_Si * K
   return(out)
 }
 
@@ -249,11 +249,11 @@ LSA_BCSGPLVM.dL.dpar <- function(W, X, l, alpha, sigma, q, K=NULL, dL.dK=NULL) {
   if (length(l) == ncol(W)) {
     # ARD kernel
     for (i in 1:q) {
-      dK.dl_Zi <- LSA_BCSGPLVM.dK.dL_Zi(W, l, K, i)
+      dK.dl_Zi <- LSA_BCSGPLVM.dK.dl_Zi(W, l, K, i)
       dL.dpar[2 + i] <- sum(dL.dK * dK.dl_Zi)
     }
   } else {
-    dK.dl_Z <-LSA_BCSGPLVM.dK.dL_Z(W, l, K)
+    dK.dl_Z <-LSA_BCSGPLVM.dK.dl_Z(W, l, K)
     dL.dpar[3] <- sum(dL.dK * dK.dl_Z)
   }
 
@@ -268,7 +268,7 @@ LSA_BCSGPLVM.dL.dpar <- function(W, X, l, alpha, sigma, q, K=NULL, dL.dK=NULL) {
 
   #l_S_i
   for (i in 1:num.structural.dim) {
-    dK.dl_S_i <- LSA_BCSGPLVM.dK.dL_S_i(W, l, K, i, q)
+    dK.dl_S_i <- LSA_BCSGPLVM.dK.dl_S_i(W, l, K, i, q)
     dL.dpar[l_Z.end + i] <- sum(dL.dK * dK.dl_S_i)
   }
 
@@ -279,7 +279,7 @@ LSA_BCSGPLVM.dK.dZij <- function(Z, K, i, j, l_Z, W.pre) {
   out <- matrix(0, nrow=nrow(K), ncol=ncol(K))
   index <- which(W.pre[, 1] == i)
   if (length(index) != 0) {
-    out[, index] <- (Z[W.pre[, 1], j] - Z[i, j]) / l_Z^2 * K[, index]
+    out[, index] <- (Z[W.pre[, 1], j] - Z[i, j]) * l_Z^2 * K[, index]
     out[index, ] <- t(out[, index])
   }
   return(out)
@@ -421,8 +421,8 @@ LSA_BCSGPLVM.plot_iteration <- function(A.hist, par.hist, plot.Z, iteration, cla
   }
   if (plot.Z) {
     if (ARD) {
-      Z <- t(t(Z) / par.hist[iteration, 3:(2+ncol(Z))])
-      prev.Z <- t(t(prev.Z) / par.hist[iteration, 3:(2+ncol(Z))])
+      Z <- t(t(Z) * par.hist[iteration, 3:(2+ncol(Z))])
+      prev.Z <- t(t(prev.Z) * par.hist[iteration - 1, 3:(2+ncol(Z))])
     }
     lim <- range(c(Z, prev.Z))
     class.colours <- viridis::viridis(max(classes), end=0.8)[classes]
@@ -882,7 +882,7 @@ fit.lsa_bcsgplvm <- function(X,
     if(any(apply(X, 1, function(x) all(is.na(x))))) stop("X contains an entry where all values are missing.")
     X.unstructured <-  t(apply(infer.missing.values(X), 1, as.numeric))
   }
-
+  # NB K.bc.l is not an inverse lengthscale, unlike all other lengthscales in this file.
   if (is.null(K.bc.l)) {
     #Turn off constraint
     K.bc <- diag(nrow(X.unstructured))
@@ -957,10 +957,10 @@ fit.lsa_bcsgplvm <- function(X,
     if (ARD) {
       l_Z <- numeric(q)
       for (i in 1:q) {
-        l_Z[i] <- as.numeric(quantile(dist(Z[,i]), 0.1))
+        l_Z[i] <- 1 / as.numeric(quantile(dist(Z[,i]), 0.1))
       }
     } else {
-      l_Z <- as.numeric(quantile(dist(Z), 0.1))
+      l_Z <- 1 / as.numeric(quantile(dist(Z), 0.1))
     }
     alpha <- sd(as.numeric(X.unstructured)) / sqrt(2)
     sigma <- alpha
@@ -988,10 +988,10 @@ fit.lsa_bcsgplvm <- function(X,
       str.fixed.par <- logical(length(str.par))
     }
     if (ARD) {
-      str.par[3:(q+2)] <- 10^-8
+      str.par[3:(q+2)] <- 10^8
       str.fixed.par[3:(q+2)] <- TRUE
     } else {
-      str.par[3] <- 10^-8
+      str.par[3] <- 10^8
       str.fixed.par[3] <- TRUE
     }
     opt <- LSA_BCSGPLVM.sgdopt(X=X, A.init=A.init, par.init=str.par, K.bc=K.bc,
