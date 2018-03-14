@@ -296,16 +296,6 @@ LSA_BCSGPLVM.dL.dpar <- function(W, X, l, alpha, sigma, q, K=NULL, dL.dK=NULL, l
   return(dL.dpar)
 }
 
-LSA_BCSGPLVM.dK.dZij <- function(Z, K, i, j, l_Z, W.pre) {
-  out <- matrix(0, nrow=nrow(K), ncol=ncol(K))
-  index <- which(W.pre[, 1] == i)
-  if (length(index) != 0) {
-    out[, index] <- (Z[W.pre[, 1], j] - Z[i, j]) * l_Z^2 * K[, index]
-    out[index, ] <- t(out[, index])
-  }
-  return(out)
-}
-
 LSA_BCSGPLVM.dL.dZ <- function(W.pre, X, Z,
                                l, alpha, sigma,
                                Z.prior=c("normal", "uniform", "discriminative"),
@@ -325,11 +315,16 @@ LSA_BCSGPLVM.dL.dZ <- function(W.pre, X, Z,
   }
   out <- matrix(0, nrow=nrow(Z), ncol=ncol(Z))
   for (i in 1:nrow(Z)) {
-    for (j in 1:ncol(Z)) {
-      index <- which(W.pre[, 1] == i)
-      dK.dZij <-  LSA_BCSGPLVM.dK.dZij(Z, K, i, j, l[j], W.pre)
-      out[i, j] <- (2 * sum(dL.dK[index, ] * dK.dZij[index, ]) -
-        sum(dL.dK[index, index] * dK.dZij[index, index]))
+    index <- which(W.pre[, 1] == i)
+    if (length(index) != 0) {
+      for (j in 1:ncol(Z)) {
+        dK.dZij.partial <-  (Z[W.pre[, 1], j] - Z[i, j]) * l[j]^2 * K[, index, drop=F]
+        # In general we need to subtract the trace in the calculation below, but
+        # since the diagonal of dK.dZij is always zero, we don't need to bother.
+        out[i, j] <- 2 * sum(dL.dK[, index] * dK.dZij.partial)
+      }
+    } else {
+      out[i, ] <- 0
     }
   }
   if (Z.prior==ZPriorNorm_) {
