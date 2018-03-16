@@ -7,7 +7,7 @@ ZPriorOptions_ <- c(ZPriorNorm_, ZPriorUnif_, ZPriorDisc_)
 l_ZPriorUnif_ <- "uniform"
 l_ZPriorLapl_ <- "laplace"
 l_ZPriorOptions_ <- c(l_ZPriorUnif_, l_ZPriorLapl_)
-l_Z.prior.lapl.lambda_ <- 10^-1
+l_Z.prior.lapl.lambda_ <- 1
 
 # Optimization methods
 ADAM_ <- "ADAM"
@@ -327,10 +327,11 @@ LSA_BCSGPLVM.dL.dZ <- function(W.pre, X, Z,
       out[i, ] <- 0
     }
   }
+  included.Z.rows <- 1:nrow(Z) %in% W.pre[, 1]
   if (Z.prior==ZPriorNorm_) {
-    out <- out - Z / 10^2
+    out[included.Z.rows, ] <- out[included.Z.rows, ] - Z[included.Z.rows, ] / 10^2
   } else if (Z.prior==ZPriorDisc_) {
-    out <- out + discriminative.prior(Z, Z.prior.params, grad=TRUE)$dL.dZ
+    out[included.Z.rows, ] <- out[included.Z.rows, ] + discriminative.prior(Z, Z.prior.params, grad=TRUE)$dL.dZ[included.Z.rows, ]
   }
   return(out)
 }
@@ -649,6 +650,13 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
                                     l_Z.prior=l_Z.prior)
     dL.dpar[2] <- -dL.dpar[2] / par[2]^2
 
+    if (verbose) {
+      print("dL/dpar")
+      print(dL.dpar)
+    }
+
+
+
     if (optimization.method == ADAM_) {
 
       if (optimize.A) {
@@ -856,11 +864,11 @@ fit.lsa_bcsgplvm <- function(X,
     # Set up default optimization parameters
     optimization.method.pars <- list()
     if (optimization.method == ADAM_) {
-      optimization.method.pars$learning.rate <- 0.9
+      optimization.method.pars$learning.rate <- 0.999
       optimization.method.pars$momentum.rate <- 0.9
       optimization.method.pars$adam.epsilon <- 10^-8
-      optimization.method.pars$step.size.range <- c(10^-1, 10^-3)
-      optimization.method.pars$par.step.size.range <- c(10^-1, 10^-2)
+      optimization.method.pars$step.size.range <- c(10^-2, 10^-4)
+      optimization.method.pars$par.step.size.range <- c(10^-2, 10^-4)
     }
 
     if (optimization.method == SMD_) {
