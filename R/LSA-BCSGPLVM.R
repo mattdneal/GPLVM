@@ -187,7 +187,7 @@ discriminative.prior <- function(Z, Z.prior.params, grad=FALSE) {
 LSA_BCSGPLVM.L <- function(W, X, l, alpha, sigma, q,
                            Z.prior=c("normal", "uniform", "discriminative"), K=NULL,
                            Z.prior.params=list(),
-                           l_Z.prior=c("uniform", "laplace")) {
+                           l_Z.prior=c("uniform", "laplace"), l_Z.prior.params=list()) {
   Z.prior <- match.arg(Z.prior, ZPriorOptions_)
   l_Z.prior <- match.arg(l_Z.prior, l_ZPriorOptions_)
   if (missing(K)) {
@@ -210,10 +210,12 @@ LSA_BCSGPLVM.L <- function(W, X, l, alpha, sigma, q,
 
   l_Z.prior.term <- 0
   if (l_Z.prior == l_ZPriorLapl_) {
+    if ("lambda" %in% names(l_Z.prior.params)) lambda <- l_Z.prior.params[["lambda"]]
+    else lambda <- l_Z.prior.lapl.lambda_
     if (length(l) == ncol(W)) {
-      l_Z.prior.term <- -l_Z.prior.lapl.lambda_ * sum(abs(l[1:q]))
+      l_Z.prior.term <- -lambda * sum(abs(l[1:q]))
     } else {
-      l_Z.prior.term <- -l_Z.prior.lapl.lambda_ * sum(abs(l[1]))
+      l_Z.prior.term <- -lambda * sum(abs(l[1]))
     }
   }
 
@@ -247,7 +249,7 @@ LSA_BCSGPLVM.dK.dl_S_i <- function(W, l, K, i, q) {
   return(out)
 }
 
-LSA_BCSGPLVM.dL.dpar <- function(W, X, l, alpha, sigma, q, K=NULL, dL.dK=NULL, l_Z.prior=c("uniform", "laplace")) {
+LSA_BCSGPLVM.dL.dpar <- function(W, X, l, alpha, sigma, q, K=NULL, dL.dK=NULL, l_Z.prior=c("uniform", "laplace"), l_Z.prior.params=list()) {
   l_Z.prior <- match.arg(l_Z.prior, l_ZPriorOptions_)
   X <- as.matrix(X)
   if (missing(K)) {
@@ -265,17 +267,21 @@ LSA_BCSGPLVM.dL.dpar <- function(W, X, l, alpha, sigma, q, K=NULL, dL.dK=NULL, l
   dL.dpar[2] <- sum(diag(dL.dK)) * 2 * sigma
 
   #l_Z
+  if ("lambda" %in% names(l_Z.prior.params)) lambda <- l_Z.prior.params[["lambda"]]
+  else lambda <- l_Z.prior.lapl.lambda_
   if (length(l) == ncol(W)) {
     # ARD kernel
     for (i in 1:q) {
       dK.dl_Zi <- LSA_BCSGPLVM.dK.dl_Zi(W, l, K, i)
       dL.dpar[2 + i] <- sum(dL.dK * dK.dl_Zi)
-      if (l_Z.prior == l_ZPriorLapl_) dL.dpar[2 + i] <- dL.dpar[2 + i] - sign(l[i]) * l_Z.prior.lapl.lambda_
+      if (l_Z.prior == l_ZPriorLapl_) {
+        dL.dpar[2 + i] <- dL.dpar[2 + i] - sign(l[i]) * lambda
+      }
     }
   } else {
     dK.dl_Z <-LSA_BCSGPLVM.dK.dl_Z(W, l, K)
     dL.dpar[3] <- sum(dL.dK * dK.dl_Z)
-    if (l_Z.prior == l_ZPriorLapl_) dL.dpar[3] <- dL.dpar[3] - sign(l[1]) * l_Z.prior.lapl.lambda_
+    if (l_Z.prior == l_ZPriorLapl_) dL.dpar[3] <- dL.dpar[3] - sign(l[1]) * lambda
   }
 
   num.structural.dim <- ncol(W) - q
@@ -479,7 +485,8 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
                                 optimization.method.pars,
                                 ivm=FALSE, ivm.selection.size=NULL,
                                 optimizing.structure=FALSE,
-                                l_Z.prior=c("uniform", "laplace")) {
+                                l_Z.prior=c("uniform", "laplace"),
+                                l_Z.prior.params=list()) {
 
   optimization.method <- match.arg(optimization.method)
 
@@ -626,7 +633,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
                         l=par[-(1:2)], alpha=par[1], sigma=1 / par[2],
                         q=q,
                         Z.prior=Z.prior, K=K, Z.prior.params=Z.prior.params,
-                        l_Z.prior=l_Z.prior)
+                        l_Z.prior=l_Z.prior, l_Z.prior.params=l_Z.prior.params)
 
     if (optimize.A) {
       A.hist[iteration, , ] <- A
@@ -647,7 +654,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
     dL.dpar <- LSA_BCSGPLVM.dL.dpar(W, X.sample,
                                     par[-(1:2)], par[1], 1 / par[2],
                                     q, K=K, dL.dK=dL.dK,
-                                    l_Z.prior=l_Z.prior)
+                                    l_Z.prior=l_Z.prior, l_Z.prior.params=l_Z.prior.params)
     dL.dpar[2] <- -dL.dpar[2] / par[2]^2
 
     if (verbose) {
@@ -856,7 +863,8 @@ fit.lsa_bcsgplvm <- function(X,
                              ivm=FALSE,
                              ivm.selection.size=2048,
                              ARD=F,
-                             l_Z.prior=c("uniform", "laplace")
+                             l_Z.prior=c("uniform", "laplace"),
+                             l_Z.prior.params=list()
 ) {
   optimization.method <- match.arg(optimization.method)
 
@@ -1041,7 +1049,7 @@ fit.lsa_bcsgplvm <- function(X,
                                Z.prior.params=Z.prior.params,
                                ivm=ivm, ivm.selection.size=ivm.selection.size,
                                optimizing.structure = TRUE,
-                               l_Z.prior=l_Z.prior)
+                               l_Z.prior=l_Z.prior, l_Z.prior.params=l_Z.prior.params)
     str.par <- opt$par
     out$str.par.opt <- opt
 
@@ -1064,7 +1072,7 @@ fit.lsa_bcsgplvm <- function(X,
                                verbose=verbose, Z.prior=Z.prior,
                                Z.prior.params=Z.prior.params,
                                ivm=ivm, ivm.selection.size=ivm.selection.size,
-                               l_Z.prior=l_Z.prior)
+                               l_Z.prior=l_Z.prior, l_Z.prior.params=l_Z.prior.params)
     par <- opt$par
     out$par.opt <- opt
   }
@@ -1080,7 +1088,7 @@ fit.lsa_bcsgplvm <- function(X,
                              verbose=verbose, Z.prior=Z.prior,
                              Z.prior.params=Z.prior.params,
                              ivm=ivm, ivm.selection.size=ivm.selection.size,
-                             l_Z.prior=l_Z.prior)
+                             l_Z.prior=l_Z.prior, l_Z.prior.params=l_Z.prior.params)
 
 
   out$A.opt <- opt
