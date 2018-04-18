@@ -309,7 +309,7 @@ LSA_BCSGPLVM.dL.dZ <- function(W.pre, X, Z,
                                Z.prior.params=list()) {
   Z.prior <- match.arg(Z.prior, ZPriorOptions_)
   if (length(l) == ncol(W.pre)) {
-    l <- rep(l[1], ncol(Z))
+    l <- c(rep(l[1], ncol(Z)), l[-1])
   }
   X <- as.matrix(X)
   if (missing(K)) {
