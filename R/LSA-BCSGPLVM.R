@@ -707,7 +707,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
                                       Z.prior.params=Z.prior.params,
                                       K=K, dL.dK=dL.dK)
           dL.dpar <- LSA_BCSGPLVM.dL.dpar(W=W, X=X.sample, l=par[-(1:2)], alpha=par[1], sigma=1 / par[2],
-                                          K=K, dL.dK=dL.dK)
+                                          q=q, K=K, dL.dK=dL.dK)
           dL.dpar[2] <- -dL.dpar[2] / par[2]^2
           return(c(dL.dpar, as.numeric(dL.dA)))
         }
@@ -719,7 +719,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
         smd.A.v_i <- smd.lambda * smd.A.v_i + smd.A.a_i * (smd.A.H_i.v_i - dL.dA)
       } else {
         g <- function(x) {
-          out <- LSA_BCSGPLVM.dL.dpar(W, X.sample, x[-(1:2)], x[1], 1 / x[2])
+          out <- LSA_BCSGPLVM.dL.dpar(W, X.sample, x[-(1:2)], x[1], 1 / x[2], q=q)
           out[2] <- -out[2] / x[2]^2
           return(out)
         }
