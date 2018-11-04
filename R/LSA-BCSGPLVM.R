@@ -13,6 +13,7 @@ l_Z.prior.lapl.lambda_ <- 1
 ADAM_ <- "ADAM"
 SMD_ <- "SMD"
 SGD_ <- "SGD"
+MOM_ <- "momentum"
 
 #' Title
 #'
@@ -482,7 +483,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
                                 optimize.A, classes, plot.freq, par.fixed=NULL,
                                 verbose=FALSE, Z.prior=c("normal", "uniform", "discriminative"),
                                 Z.prior.params=list(),
-                                optimization.method=c("SMD", "ADAM", "SGD"),
+                                optimization.method=c("SMD", "ADAM", "SGD", "momentum"),
                                 optimization.method.pars,
                                 ivm=FALSE, ivm.selection.size=NULL,
                                 optimizing.structure=FALSE,
@@ -510,6 +511,13 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
   delta.par <- numeric(length(par))
 
   # Set optimization method parameters
+  if (optimization.method == MOM_) {
+    step.size <- optimization.method.pars$step.size
+    momentum <- optimization.method.pars$momentum
+    v.A <- 0
+    v.par <- 0
+  }
+
   if (optimization.method == SGD_ | optimization.method == ADAM_) {
     step.size.range <- optimization.method.pars$step.size.range
     par.step.size.range <- optimization.method.pars$par.step.size.range
@@ -672,6 +680,15 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
         delta.A <- step.size * dL.dA
       }
       delta.par <- par.step.size * dL.dpar
+    }
+
+    if (optimization.method == MOM_) {
+      if (optimize.A) {
+        delta.A <- v.A * momentum + step.size * dL.dA
+        v.A <- delta.A
+      }
+      delta.par <- v.par * momentum + step.size * dL.dpar
+      v.par <- delta.par
     }
 
     if (optimization.method == ADAM_) {
@@ -859,7 +876,7 @@ fit.lsa_bcsgplvm <- function(X,
                              Z.prior=c("normal", "uniform", "discriminative"),
                              par.init=NULL,
                              points.in.approximation=1024,
-                             optimization.method=c("SMD", "ADAM", "SGD"),
+                             optimization.method=c("SMD", "ADAM", "SGD", "momentum"),
                              optimization.method.pars=NULL,
                              parameter.opt.iterations=300,
                              par.fixed.par.opt=NULL,
@@ -883,6 +900,11 @@ fit.lsa_bcsgplvm <- function(X,
     optimization.method.pars <- list()
     if (optimization.method == SGD_) {
       optimization.method.pars$step.size.range <- c(10^-2, 10^-2)
+    }
+
+    if (optimization.method == MOM_) {
+      optimization.method.pars$step.size <- 10^-4
+      optimization.method.pars$momentum <- 0.9
     }
 
     if (optimization.method == ADAM_) {
