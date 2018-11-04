@@ -12,6 +12,7 @@ l_Z.prior.lapl.lambda_ <- 1
 # Optimization methods
 ADAM_ <- "ADAM"
 SMD_ <- "SMD"
+SGD_ <- "SGD"
 
 #' Title
 #'
@@ -481,7 +482,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
                                 optimize.A, classes, plot.freq, par.fixed=NULL,
                                 verbose=FALSE, Z.prior=c("normal", "uniform", "discriminative"),
                                 Z.prior.params=list(),
-                                optimization.method=c("SMD", "ADAM"),
+                                optimization.method=c("SMD", "ADAM", "SGD"),
                                 optimization.method.pars,
                                 ivm=FALSE, ivm.selection.size=NULL,
                                 optimizing.structure=FALSE,
@@ -508,10 +509,8 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
   delta.A <- matrix(0, nrow=nrow(A), ncol=ncol(A))
   delta.par <- numeric(length(par))
 
-  if (optimization.method == ADAM_) {
-    learning.rate <- optimization.method.pars$learning.rate
-    momentum.rate <- optimization.method.pars$momentum.rate
-    adam.epsilon <- optimization.method.pars$adam.epsilon
+  # Set optimization method parameters
+  if (optimization.method == SGD_ | optimization.method == ADAM_) {
     step.size.range <- optimization.method.pars$step.size.range
     par.step.size.range <- optimization.method.pars$par.step.size.range
 
@@ -525,6 +524,12 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
       par.step.size <- par.step.size.range[1]
       par.step.size.change <- (par.step.size.range[1] - par.step.size.range[2]) / iterations
     }
+  }
+
+  if (optimization.method == ADAM_) {
+    learning.rate <- optimization.method.pars$learning.rate
+    momentum.rate <- optimization.method.pars$momentum.rate
+    adam.epsilon <- optimization.method.pars$adam.epsilon
 
     # Variables for ADAM update
     m.par <- numeric(length(par))
@@ -662,7 +667,12 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
       print(dL.dpar)
     }
 
-
+    if (optimization.method == SGD_) {
+      if (optimize.A) {
+        delta.A <- step.size * dL.dA
+      }
+      delta.par <- par.step.size * dL.dpar
+    }
 
     if (optimization.method == ADAM_) {
 
@@ -749,7 +759,7 @@ LSA_BCSGPLVM.sgdopt <- function(X, A.init, par.init, K.bc, points.in.approximati
       A <- A + delta.A
     }
     if (verbose) print(par)
-    if (optimization.method == ADAM_) {
+    if (optimization.method == ADAM_ | optimization.method == SGD_) {
       par.step.size <- par.step.size - par.step.size.change
       step.size <- step.size - step.size.change
     }
@@ -849,7 +859,7 @@ fit.lsa_bcsgplvm <- function(X,
                              Z.prior=c("normal", "uniform", "discriminative"),
                              par.init=NULL,
                              points.in.approximation=1024,
-                             optimization.method=c("SMD", "ADAM"),
+                             optimization.method=c("SMD", "ADAM", "SGD"),
                              optimization.method.pars=NULL,
                              parameter.opt.iterations=300,
                              par.fixed.par.opt=NULL,
@@ -871,6 +881,10 @@ fit.lsa_bcsgplvm <- function(X,
   if (is.null(optimization.method.pars)) {
     # Set up default optimization parameters
     optimization.method.pars <- list()
+    if (optimization.method == SGD_) {
+      optimization.method.pars$step.size.range <- c(10^-2, 10^-2)
+    }
+
     if (optimization.method == ADAM_) {
       optimization.method.pars$learning.rate <- 0.999
       optimization.method.pars$momentum.rate <- 0.9
