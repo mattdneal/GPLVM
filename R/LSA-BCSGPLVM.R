@@ -956,6 +956,9 @@ fit.lsa_bcsgplvm <- function(X,
   }
 
   #Deal with missing data in X - replace NAs with gaussian weighted average
+  #First check/remove any columns which are completely NA
+  X.unstructured.col.notallna <- apply(X.unstructured, 2, function(x) !all(is.na(x)))
+  X.unstructured <- X.unstructured[,X.unstructured.col.notallna]
   X.unstructured.na.indices <- which(is.na(X.unstructured), arr.ind=T)
   if (length(X.unstructured.na.indices) > 0) {
     warning("X contains NAs. Inferring missing entries using weighted average of surrounding pixels for back constraints and PCA initialisation.")
