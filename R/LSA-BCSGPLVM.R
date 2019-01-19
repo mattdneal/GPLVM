@@ -160,7 +160,8 @@ discriminative.prior <- function(Z, Z.prior.params, grad=FALSE) {
 
   class.var <- class_var_matrices(Z = Z, classes = classes, grad=grad)
 
-  S_w.inv.S_b <- solve(class.var$S_w, class.var$S_b)
+  S_w.chol <- chol(class.var$S_w)
+  S_w.inv.S_b <- backsolve(S_w.chol, forwardsolve(t(S_w.chol), class.var$S_b))
 
   J <- sum(diag(S_w.inv.S_b))
 
@@ -175,8 +176,8 @@ discriminative.prior <- function(Z, Z.prior.params, grad=FALSE) {
 
     for (i in 1:nrow(Z)) {
       for (j in 1:ncol(Z)) {
-        S_w.inv.dS_b <- solve(class.var$S_w, dS_b.dZ[i, j, ,])
-        S_w.inv.dS_w <- solve(class.var$S_w, dS_w.dZ[i, j, ,])
+        S_w.inv.dS_b <- backsolve(S_w.chol, forwardsolve(t(S_w.chol), dS_b.dZ[i, j, ,]))  #solve(class.var$S_w, )
+        S_w.inv.dS_w <- backsolve(S_w.chol, forwardsolve(t(S_w.chol), dS_w.dZ[i, j, ,]))  #solve(class.var$S_w, )
         dJ.dZ[i, j] <- sum(diag(S_w.inv.dS_b)) - sum(S_w.inv.dS_w * t(S_w.inv.S_b))
       }
     }
